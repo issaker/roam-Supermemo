@@ -69,11 +69,13 @@ export const MainContext = React.createContext<MainContextProps>({} as MainConte
 interface Props {
   isOpen: boolean;
   onCloseCallback: () => void;
+  onRestartCallback: () => void;
 }
 
 const PracticeOverlay = ({
   isOpen,
   onCloseCallback,
+  onRestartCallback,
 }: Props) => {
   const sessionContext = usePracticeSession();
   const {
@@ -418,8 +420,8 @@ const PracticeOverlay = ({
       updateSetting(key, formSettings[key]);
     });
     setShowSettings(false);
-    onCloseCallback();
-  }, [updateSetting, onCloseCallback]);
+    onRestartCallback();
+  }, [updateSetting, onRestartCallback]);
 
   const hotkeys = React.useMemo(
     () => [

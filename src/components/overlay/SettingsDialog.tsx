@@ -79,7 +79,7 @@ const SettingsDialog = ({
             Close
           </Blueprint.Button>
           <Blueprint.Button intent="primary" onClick={handleApplyAndClose}>
-            Apply & Close
+            Apply & Restart
           </Blueprint.Button>
         </div>
       </div>

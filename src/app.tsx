@@ -34,6 +34,7 @@ export type handlePracticeProps = Session & {
 const App = () => {
   const [showPracticeOverlay, setShowPracticeOverlay] = React.useState(false);
   const [isCramming, setIsCramming] = React.useState(false);
+  const [overlayKey, setOverlayKey] = React.useState(0);
 
   const {
     settings,
@@ -109,6 +110,11 @@ const App = () => {
     refreshData();
   };
 
+  const onRestartPracticeOverlayCallback = () => {
+    setOverlayKey((prev) => prev + 1);
+    refreshData();
+  };
+
   const handleMemoTagChange = (tag: string) => {
     setSelectedTag(tag);
   };
@@ -161,6 +167,7 @@ const App = () => {
         <SidePanelWidget onClickCallback={onShowPracticeOverlay} today={today} />
         {showPracticeOverlay && (
           <PracticeSessionProvider
+            key={overlayKey}
             settings={settings}
             practiceData={practiceData}
             today={today}
@@ -178,6 +185,7 @@ const App = () => {
             <PracticeOverlay
               isOpen={true}
               onCloseCallback={onClosePracticeOverlayCallback}
+              onRestartCallback={onRestartPracticeOverlayCallback}
             />
           </PracticeSessionProvider>
         )}
