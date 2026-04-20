@@ -23,9 +23,8 @@
 import * as React from 'react';
 import { SchedulingAlgorithm, InteractionStyle, Session, isGradingAlgorithm } from '~/models/session';
 import { savePracticeData, updateParentNextDueDate } from '~/queries';
-import { generatePracticeData, progressiveInterval, supermemo } from '~/practice';
+import { generatePracticeData } from '~/practice';
 import { generateNewSession } from '~/queries/utils';
-import * as dateUtils from '~/utils/date';
 
 export const shouldReinsertLblCard = ({
   currentChildIndex,
@@ -152,19 +151,15 @@ export default function useLineByLineReview({
       const now = new Date();
 
       if (isLblNext) {
-        const progReps = existingChildSession.progressive_repetitions || 0;
-        const nextInterval = progressiveInterval(progReps);
-        const childNextDueDate = dateUtils.addDays(now, nextInterval);
-
         const childPracticeProps = {
           ...existingChildSession,
           refUid: childUid,
           dataPageTitle,
           algorithm,
           interaction: InteractionStyle.NORMAL,
-          progressive_repetitions: progReps + 1,
         };
         const childResult = generatePracticeData({ ...childPracticeProps, dateCreated: now });
+        const childNextDueDate = childResult.nextDueDate;
 
         await savePracticeData({
           refUid: childUid,
@@ -223,14 +218,6 @@ export default function useLineByLineReview({
         return;
       }
 
-      const sm2Input = {
-        sm2_interval: existingChildSession.sm2_interval || 0,
-        sm2_repetitions: existingChildSession.sm2_repetitions || 0,
-        sm2_eFactor: existingChildSession.sm2_eFactor || 2.5,
-      };
-      const sm2Result = supermemo(sm2Input, grade);
-      const childNextDueDate = dateUtils.addDays(now, sm2Result.sm2_interval);
-
       const childPracticeProps = {
         ...existingChildSession,
         refUid: childUid,
@@ -238,11 +225,9 @@ export default function useLineByLineReview({
         algorithm,
         interaction: InteractionStyle.NORMAL,
         sm2_grade: grade,
-        sm2_interval: sm2Result.sm2_interval,
-        sm2_repetitions: sm2Result.sm2_repetitions,
-        sm2_eFactor: sm2Result.sm2_eFactor,
       };
       const childResult = generatePracticeData({ ...childPracticeProps, dateCreated: now });
+      const childNextDueDate = childResult.nextDueDate;
 
       await savePracticeData({
         refUid: childUid,

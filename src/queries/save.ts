@@ -102,7 +102,17 @@ const upsertLatestSessionField = async ({
     })
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
-  if (!dateBlocks.length) return;
+  if (!dateBlocks.length) {
+    const dateStr = stringUtils.dateToRoamDateString(new Date());
+    const sessionBlockUid = await createChildBlock(
+      cardDataBlockUid,
+      `[[${dateStr}]] ⚪`,
+      0,
+      { open: false }
+    );
+    await createChildBlock(sessionBlockUid, `${key}:: ${value}`, -1);
+    return;
+  }
 
   const latestDateBlock = dateBlocks[0];
   if (!latestDateBlock?.children) {
@@ -224,6 +234,9 @@ export const savePracticeData = async ({ refUid, dataPageTitle, dateCreated, ...
     let value = data[key];
     if (key === 'nextDueDate') {
       value = `[[${stringUtils.dateToRoamDateString(nextDueDate)}]]`;
+    }
+    if (key === 'sm2_eFactor' && typeof value === 'number') {
+      value = value.toFixed(2);
     }
 
     await createChildBlock(sessionBlockUid, `${key}:: ${value}`, -1);

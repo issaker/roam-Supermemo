@@ -1075,7 +1075,7 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
                   }
                   if (childData.sm2_interval !== undefined) fieldsToCreate.push(`sm2_interval:: ${childData.sm2_interval}`);
                   if (childData.sm2_repetitions !== undefined) fieldsToCreate.push(`sm2_repetitions:: ${childData.sm2_repetitions}`);
-                  if (childData.sm2_eFactor !== undefined) fieldsToCreate.push(`sm2_eFactor:: ${childData.sm2_eFactor}`);
+                  if (childData.sm2_eFactor !== undefined) fieldsToCreate.push(`sm2_eFactor:: ${typeof childData.sm2_eFactor === 'number' ? childData.sm2_eFactor.toFixed(2) : childData.sm2_eFactor}`);
                   if (childData.sm2_grade !== undefined) fieldsToCreate.push(`sm2_grade:: ${childData.sm2_grade}`);
                   if (childData.grade !== undefined) fieldsToCreate.push(`sm2_grade:: ${childData.grade}`);
                   if (childData.progressive_repetitions !== undefined) fieldsToCreate.push(`progressive_repetitions:: ${childData.progressive_repetitions}`);

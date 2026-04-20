@@ -35,7 +35,7 @@ export const supermemo = (
 
   nextEfactor = item.sm2_eFactor + (0.1 - (5 - sm2_grade) * (0.08 + (5 - sm2_grade) * 0.02));
   if (nextEfactor < 1.3) nextEfactor = 1.3;
-  nextEfactor = Math.round(nextEfactor * 10000) / 10000;
+  nextEfactor = parseFloat(nextEfactor.toFixed(2));
 
   return { sm2_interval: nextInterval, sm2_repetitions: nextRepetition, sm2_eFactor: nextEfactor };
 };
