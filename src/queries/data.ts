@@ -241,6 +241,10 @@ const parseSessionHistory = (sessionChildren, uid) => {
     previousSnapshot = normalizedRecord;
   }
 
+  if (normalizedSessions.length && !normalizedSessions[0].nextDueDate) {
+    normalizedSessions[0].isNew = true;
+  }
+
   return normalizedSessions;
 };
 
@@ -298,6 +302,10 @@ const parseLatestSession = (sessionChildren, uid) => {
         break;
       }
     }
+  }
+
+  if (!rawRecord.nextDueDate) {
+    rawRecord.isNew = true;
   }
 
   return rawRecord;

@@ -14,7 +14,6 @@ import {
   NewSession,
   SchedulingAlgorithm,
   InteractionStyle,
-  FixedTimeUnit,
 } from '~/models/session';
 
 export const parentChainInfoQuery = `[
@@ -275,33 +274,10 @@ export const generateNewSession = ({
   const effectiveAlgorithm = algorithm ?? SchedulingAlgorithm.PROGRESSIVE;
   const effectiveInteraction = interaction ?? InteractionStyle.NORMAL;
 
-  const baseSession: Omit<NewSession, 'isNew'> = {
+  return {
     dateCreated,
     algorithm: effectiveAlgorithm,
     interaction: effectiveInteraction,
-  };
-
-  if (effectiveAlgorithm === SchedulingAlgorithm.SM2) {
-    return {
-      ...baseSession,
-      sm2_eFactor: 2.5,
-      sm2_repetitions: 0,
-      isNew,
-    };
-  }
-
-  if (effectiveAlgorithm === SchedulingAlgorithm.PROGRESSIVE) {
-    return {
-      ...baseSession,
-      progressive_repetitions: 0,
-      isNew,
-    };
-  }
-
-  return {
-    ...baseSession,
-    fixed_multiplier: 3,
-    fixed_unit: FixedTimeUnit.DAYS,
     isNew,
   };
 };

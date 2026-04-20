@@ -46,7 +46,7 @@ export const progressiveInterval = (progressive_repetitions: number): number => 
   return 6 * Math.pow(2, progressive_repetitions - 1);
 };
 
-type PracticeDataResult = Session & { nextDueDateFromNow?: string };
+type PracticeDataResult = Session;
 
 /**
  * 核心调度函数：根据算法计算下一次复习数据。
@@ -98,7 +98,6 @@ export const generatePracticeData = ({
       ...(progressive_interval !== undefined && { progressive_interval }),
       dateCreated: referenceDate,
       nextDueDate,
-      nextDueDateFromNow: dateUtils.customFromNow(nextDueDate),
     };
   }
 
@@ -125,7 +124,6 @@ export const generatePracticeData = ({
       ...(sm2_grade !== undefined && { sm2_grade }),
       dateCreated: referenceDate,
       nextDueDate,
-      nextDueDateFromNow: dateUtils.customFromNow(nextDueDate),
     };
   }
 
@@ -163,7 +161,6 @@ export const generatePracticeData = ({
       ...(sm2_interval !== undefined && { sm2_interval }),
       ...(sm2_grade !== undefined && { sm2_grade }),
       nextDueDate,
-      nextDueDateFromNow: dateUtils.customFromNow(nextDueDate),
     };
   }
 
@@ -193,7 +190,7 @@ const practice = async (practiceProps: PracticeProps, isDryRun = false) => {
     interaction,
   } = practiceProps;
 
-  const { nextDueDateFromNow, ...practiceResultData } = generatePracticeData({
+  const practiceResultData = generatePracticeData({
     sm2_grade,
     sm2_interval,
     sm2_repetitions,

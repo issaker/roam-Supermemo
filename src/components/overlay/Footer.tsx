@@ -4,6 +4,7 @@ import type { IconName, Intent } from '@blueprintjs/core';
 import * as BlueprintSelect from '@blueprintjs/select';
 import styled from '@emotion/styled';
 import * as asyncUtils from '~/utils/async';
+import * as dateUtils from '~/utils/date';
 import { generatePracticeData } from '~/practice';
 import Tooltip from '~/components/Tooltip';
 import ButtonTags from '~/components/ButtonTags';
@@ -12,6 +13,14 @@ import { MainContext } from '~/components/overlay/PracticeOverlay';
 import { usePracticeSession } from '~/contexts/PracticeSessionContext';
 import { getIntentColor, colors } from '~/theme';
 
+const formatDaysFromNow = (nextDueDate: Date | undefined): string => {
+  if (!nextDueDate) return '';
+  const days = dateUtils.daysBetween(new Date(), nextDueDate);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  return `${days} days`;
+};
+
 /**
  * IntervalEstimate 继承 Session 的所有算法字段（sm2_*, progressive_*, fixed_*）。
  * 设计意图：全量继承确保用户在不同算法间切换时，每个算法的历史数据都能被
@@ -19,9 +28,7 @@ import { getIntentColor, colors } from '~/theme';
  * SM2 的 eFactor 和 repetitions 仍然保留，间隔计算能从正确位置继续。
  * 排除 baseSessionData 因为间隔预览不需要此嵌套字段。
  */
-type IntervalEstimate = Omit<Session, 'baseSessionData'> & {
-  nextDueDateFromNow?: string;
-};
+type IntervalEstimate = Omit<Session, 'baseSessionData'>;
 
 type IntervalEstimates =
   | undefined
@@ -400,12 +407,12 @@ const LblNextControls = ({
         icon="book"
         className="text-base font-normal py-1"
         intent="default"
-        tooltipText={`Next section in ${intervalEstimates[0]?.nextDueDateFromNow}`}
+        tooltipText={`Next section in ${formatDaysFromNow(intervalEstimates[0]?.nextDueDate)}`}
         active={activeButtonKey === 'change-interval-button'}
         outlined
       >
         <span className="ml-2">
-          Read <span className="font-medium mr-3">{intervalEstimates[0]?.nextDueDateFromNow || 'Progressive'}</span>
+          Read <span className="font-medium mr-3">{formatDaysFromNow(intervalEstimates[0]?.nextDueDate) || 'Progressive'}</span>
         </span>
       </ControlButton>
       <ControlButton
@@ -413,7 +420,7 @@ const LblNextControls = ({
         className="text-base font-medium py-1"
         intent="success"
         onClick={() => intervalPractice()}
-        tooltipText={`Next card — resume reading in ${intervalEstimates[0]?.nextDueDateFromNow}`}
+        tooltipText={`Next card — resume reading in ${formatDaysFromNow(intervalEstimates[0]?.nextDueDate)}`}
         active={activeButtonKey === 'next-button'}
         outlined
       >
@@ -473,9 +480,9 @@ const FixedIntervalEditor = () => {
   );
 };
 
-const IntervalString = ({ algorithm, fixed_multiplier, fixed_unit, nextDueDateFromNow }) => {
+const IntervalString = ({ algorithm, fixed_multiplier, fixed_unit, nextDueDate }) => {
   if (algorithm === SchedulingAlgorithm.PROGRESSIVE) {
-    const displayText = nextDueDateFromNow || 'Progressive';
+    const displayText = (nextDueDate ? formatDaysFromNow(nextDueDate) : null) || 'Progressive';
     return (
       <>
         Review <span className="font-medium mr-3">{displayText}</span>
@@ -548,7 +555,7 @@ const FixedIntervalModeControls = ({
               algorithm={algorithm}
               fixed_multiplier={fixed_multiplier}
               fixed_unit={fixed_unit}
-              nextDueDateFromNow={intervalEstimates[0]?.nextDueDateFromNow}
+              nextDueDate={intervalEstimates[0]?.nextDueDate}
             />
           </span>
         </ControlButton>
@@ -568,7 +575,7 @@ const FixedIntervalModeControls = ({
                 algorithm={algorithm}
                 fixed_multiplier={fixed_multiplier}
                 fixed_unit={fixed_unit}
-                nextDueDateFromNow={intervalEstimates[0]?.nextDueDateFromNow}
+                nextDueDate={intervalEstimates[0]?.nextDueDate}
               />
               <ButtonTags>E</ButtonTags>
             </span>
@@ -581,7 +588,7 @@ const FixedIntervalModeControls = ({
         className="text-base font-medium py-1"
         intent="success"
         onClick={() => intervalPractice()}
-        tooltipText={`Review ${intervalEstimates[0].nextDueDateFromNow}`}
+        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[0]?.nextDueDate)}`}
         active={activeButtonKey === 'next-button'}
         outlined
       >
@@ -614,7 +621,7 @@ const SpacedIntervalModeControls = ({
         key="forget-button"
         className="text-base font-medium py-1"
         intent="danger"
-        tooltipText={`Review ${intervalEstimates[0]?.nextDueDateFromNow}`}
+        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[0]?.nextDueDate)}`}
         onClick={() => gradeFn(0)}
         active={activeButtonKey === 'forgot-button'}
       >
@@ -627,7 +634,7 @@ const SpacedIntervalModeControls = ({
         className="text-base font-medium py-1"
         intent="warning"
         onClick={() => gradeFn(2)}
-        tooltipText={`Review ${intervalEstimates[2]?.nextDueDateFromNow}`}
+        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[2]?.nextDueDate)}`}
         active={activeButtonKey === 'hard-button'}
       >
         Hard{' '}
@@ -639,7 +646,7 @@ const SpacedIntervalModeControls = ({
         className="text-base font-medium py-1"
         intent="primary"
         onClick={() => gradeFn(4)}
-        tooltipText={`Review ${intervalEstimates[4]?.nextDueDateFromNow}`}
+        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[4]?.nextDueDate)}`}
         active={activeButtonKey === 'good-button'}
       >
         Good{' '}
@@ -651,7 +658,7 @@ const SpacedIntervalModeControls = ({
         className="text-base font-medium py-1"
         intent="success"
         onClick={() => gradeFn(5)}
-        tooltipText={`Review ${intervalEstimates[5]?.nextDueDateFromNow}`}
+        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[5]?.nextDueDate)}`}
         active={activeButtonKey === 'perfect-button'}
       >
         Perfect{' '}
