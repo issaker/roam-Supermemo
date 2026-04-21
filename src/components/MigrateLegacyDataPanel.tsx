@@ -213,6 +213,7 @@ interface ReviewModeConversionTask {
 interface ScanResult {
   cardsNeedingConversion: number;
   cardsAlreadyConverted: number;
+  cardsWithLegacyFields: number;
   conversionTasks: ReviewModeConversionTask[];
 }
 
@@ -314,6 +315,28 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
 
       const conversionTasks: ReviewModeConversionTask[] = [];
       let cardsAlreadyConverted = 0;
+      let cardsWithLegacyFields = 0;
+
+      const LEGACY_FIELD_NAMES = new Set([
+        'progressiveRepetitions', 'progressiveInterval', 'intervalMultiplier',
+        'intervalMultiplierType', 'repetitions', 'interval', 'eFactor', 'grade',
+        'lineByLineReview',
+      ]);
+
+      const hasLegacyFieldNames = (cardChildren: any[] = []): boolean => {
+        for (const child of cardChildren) {
+          if (!child?.children) continue;
+          for (const sessionBlock of child.children) {
+            if (!sessionBlock?.children) continue;
+            for (const field of sessionBlock.children) {
+              if (!field?.string) continue;
+              const [key] = parseConfigString(field.string);
+              if (LEGACY_FIELD_NAMES.has(key)) return true;
+            }
+          }
+        }
+        return false;
+      };
 
       for (const cardUid of cardUids) {
         const cardData = pluginPageData[cardUid];
@@ -323,6 +346,10 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
           dataChildren.find(
             (child) => getStringBetween(child?.string || '', '((', '))') === cardUid
           )?.children || [];
+
+        if (hasLegacyFieldNames(rawCardChildren)) {
+          cardsWithLegacyFields++;
+        }
 
         const reviewModeFields = scanReviewModeFields(rawCardChildren);
         const { hasAlgorithm, hasInteraction } = hasAlgorithmInteractionFields(rawCardChildren);
@@ -368,6 +395,7 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
       const result: ScanResult = {
         cardsNeedingConversion: conversionTasks.length,
         cardsAlreadyConverted,
+        cardsWithLegacyFields,
         conversionTasks,
       };
 
@@ -719,10 +747,22 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
         grade: 'sm2_grade',
         progressiveRepetitions: 'progressive_repetitions',
         progressiveInterval: 'progressive_interval',
-        intervalMultiplier: 'fixed_multiplier',
       };
 
       const FIELDS_TO_DELETE = ['intervalMultiplierType', 'lineByLineReview'];
+
+      const resolveIntervalMultiplierTarget = (
+        multiplierType: string | undefined,
+        algorithm: string | undefined
+      ): string => {
+        if (multiplierType === 'Progressive') return 'progressive_interval';
+        if (multiplierType === 'Fixed' || multiplierType === 'FixedDays' || multiplierType === 'FixedWeeks'
+          || multiplierType === 'FixedMonths' || multiplierType === 'FixedYears') return 'fixed_multiplier';
+        if (algorithm === 'PROGRESSIVE' || algorithm === 'FIXED_PROGRESSIVE') return 'progressive_interval';
+        if (algorithm === 'FIXED_TIME' || algorithm === 'FIXED_DAYS' || algorithm === 'FIXED_WEEKS'
+          || algorithm === 'FIXED_MONTHS' || algorithm === 'FIXED_YEARS') return 'fixed_multiplier';
+        return 'fixed_multiplier';
+      };
 
       setProgress({
         total,
@@ -750,6 +790,7 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
 
       let phase4Renamed = 0;
       let phase4Deleted = 0;
+      let phase4Created = 0;
       let phase4ReadConverted = 0;
       let phase4Errors = 0;
 
@@ -759,22 +800,39 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
         for (const sessionBlock of cardChild.children) {
           if (!sessionBlock?.children) continue;
 
+          const collectedFields: { uid: string; key: string; value: string }[] = [];
+          const fieldKeys = new Set<string>();
+
           for (const field of sessionBlock.children) {
             if (!field?.string || !field.uid) continue;
             const [key, value] = parseConfigString(field.string);
+            collectedFields.push({ uid: field.uid, key, value });
+            fieldKeys.add(key);
+          }
 
-            if (FIELDS_TO_DELETE.includes(key)) {
+          const algorithmField = collectedFields.find(f => f.key === 'algorithm');
+          const multiplierTypeField = collectedFields.find(f => f.key === 'intervalMultiplierType');
+          const intervalMultiplierTarget = resolveIntervalMultiplierTarget(
+            multiplierTypeField?.value,
+            algorithmField?.value
+          );
+
+          const newKeysCreated = new Set<string>();
+
+          for (const field of collectedFields) {
+            if (FIELDS_TO_DELETE.includes(field.key)) {
               try {
                 await window.roamAlphaAPI.deleteBlock({ block: { uid: field.uid } });
                 phase4Deleted++;
               } catch (err) {
-                console.error(`[Memo] Phase 4 delete error for ${key}:`, err);
+                console.error(`[Memo] Phase 4 delete error for ${field.key}:`, err);
+                errMsgs.push(`Phase 4 delete ${field.key}: ${err instanceof Error ? err.message : String(err)}`);
                 phase4Errors++;
               }
               continue;
             }
 
-            if (key === 'interaction' && value === 'READ') {
+            if (field.key === 'interaction' && field.value === 'READ') {
               try {
                 await window.roamAlphaAPI.updateBlock({
                   block: { uid: field.uid, string: 'interaction:: LBL' },
@@ -782,19 +840,83 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
                 phase4ReadConverted++;
               } catch (err) {
                 console.error(`[Memo] Phase 4 READ→LBL error:`, err);
+                errMsgs.push(`Phase 4 READ→LBL: ${err instanceof Error ? err.message : String(err)}`);
                 phase4Errors++;
               }
               continue;
             }
 
-            if (FIELD_RENAME_MAP[key]) {
+            if (field.key === 'intervalMultiplier') {
+              const targetKey = intervalMultiplierTarget;
+              if (fieldKeys.has(targetKey) || newKeysCreated.has(targetKey)) {
+                try {
+                  await window.roamAlphaAPI.deleteBlock({ block: { uid: field.uid } });
+                  phase4Deleted++;
+                } catch (err) {
+                  console.error(`[Memo] Phase 4 delete intervalMultiplier error:`, err);
+                  errMsgs.push(`Phase 4 delete intervalMultiplier: ${err instanceof Error ? err.message : String(err)}`);
+                  phase4Errors++;
+                }
+              } else {
+                try {
+                  await window.roamAlphaAPI.updateBlock({
+                    block: { uid: field.uid, string: `${targetKey}:: ${field.value}` },
+                  });
+                  newKeysCreated.add(targetKey);
+                  phase4Renamed++;
+                } catch (err) {
+                  console.error(`[Memo] Phase 4 rename intervalMultiplier error:`, err);
+                  errMsgs.push(`Phase 4 rename intervalMultiplier: ${err instanceof Error ? err.message : String(err)}`);
+                  phase4Errors++;
+                }
+              }
+              continue;
+            }
+
+            if (FIELD_RENAME_MAP[field.key]) {
+              const targetKey = FIELD_RENAME_MAP[field.key];
+              if (fieldKeys.has(targetKey) || newKeysCreated.has(targetKey)) {
+                try {
+                  await window.roamAlphaAPI.deleteBlock({ block: { uid: field.uid } });
+                  phase4Deleted++;
+                } catch (err) {
+                  console.error(`[Memo] Phase 4 delete ${field.key} (target ${targetKey} exists) error:`, err);
+                  errMsgs.push(`Phase 4 delete ${field.key}: ${err instanceof Error ? err.message : String(err)}`);
+                  phase4Errors++;
+                }
+              } else {
+                try {
+                  await window.roamAlphaAPI.updateBlock({
+                    block: { uid: field.uid, string: `${targetKey}:: ${field.value}` },
+                  });
+                  newKeysCreated.add(targetKey);
+                  phase4Renamed++;
+                } catch (err) {
+                  console.error(`[Memo] Phase 4 rename error for ${field.key}:`, err);
+                  errMsgs.push(`Phase 4 rename ${field.key}: ${err instanceof Error ? err.message : String(err)}`);
+                  phase4Errors++;
+                }
+              }
+              continue;
+            }
+          }
+
+          const effectiveAlgorithm = algorithmField?.value;
+          const hasProgressiveInterval = fieldKeys.has('progressive_interval') || fieldKeys.has('progressiveInterval') || newKeysCreated.has('progressive_interval');
+          if ((effectiveAlgorithm === 'PROGRESSIVE' || effectiveAlgorithm === 'FIXED_PROGRESSIVE') && !hasProgressiveInterval && sessionBlock.uid) {
+            const progRepsField = collectedFields.find(f => f.key === 'progressive_repetitions')
+              ?? collectedFields.find(f => f.key === 'progressiveRepetitions');
+            if (progRepsField) {
               try {
-                await window.roamAlphaAPI.updateBlock({
-                  block: { uid: field.uid, string: `${FIELD_RENAME_MAP[key]}:: ${value}` },
+                const interval = progressiveInterval(Number(progRepsField.value));
+                await window.roamAlphaAPI.createBlock({
+                  location: { 'parent-uid': sessionBlock.uid, order: -1 },
+                  block: { string: `progressive_interval:: ${interval}`, open: false },
                 });
-                phase4Renamed++;
+                phase4Created++;
               } catch (err) {
-                console.error(`[Memo] Phase 4 rename error for ${key}:`, err);
+                console.error(`[Memo] Phase 4 create progressive_interval error:`, err);
+                errMsgs.push(`Phase 4 create progressive_interval: ${err instanceof Error ? err.message : String(err)}`);
                 phase4Errors++;
               }
             }
@@ -805,6 +927,7 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
       debugLog(`[Memo] Phase 4 summary:`, {
         renamed: phase4Renamed,
         deleted: phase4Deleted,
+        created: phase4Created,
         readConverted: phase4ReadConverted,
         errors: phase4Errors,
       });
@@ -1262,9 +1385,9 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
         errors: phase7Errors,
       });
 
-      setProgress({ total, migrated, skipped, phase: 'Done' });
+      setProgress({ total, migrated, skipped, phase: `Done (Phase 4: ${phase4Renamed} renamed, ${phase4Deleted} deleted, ${phase4Created} created)` });
 
-      const totalErrors = errors + phase3Errors + phase6Errors;
+      const totalErrors = errors + phase3Errors + phase4Errors + phase6Errors;
       if (totalErrors > 0) {
         setErrorDetail(`${totalErrors} cards had errors.`);
         setErrorMessages(errMsgs);
@@ -1300,7 +1423,8 @@ child block sessions, and convert <strong>FIXED_DAYS/WEEKS/MONTHS/YEARS</strong>
         </p>
         {scanResult && (
           <p>
-            <strong>{scanResult.cardsNeedingConversion}</strong> cards need migration.{' '}
+            <strong>{scanResult.cardsNeedingConversion}</strong> cards need reviewMode conversion.{' '}
+            <strong>{scanResult.cardsWithLegacyFields}</strong> cards have legacy field names to rename/delete.{' '}
             <strong>{scanResult.cardsAlreadyConverted}</strong> cards already have algorithm +
             interaction fields.
           </p>
@@ -1342,6 +1466,11 @@ child block sessions, and convert <strong>FIXED_DAYS/WEEKS/MONTHS/YEARS</strong>
           <div>
             Cards already converted: <strong>{scanResult.cardsAlreadyConverted}</strong>
           </div>
+          {scanResult.cardsWithLegacyFields > 0 && (
+            <div style={{ color: '#d29922' }}>
+              Cards with legacy field names: <strong>{scanResult.cardsWithLegacyFields}</strong>
+            </div>
+          )}
         </div>
       )}
 
