@@ -77,6 +77,7 @@ const LineByLineView = ({
               breadcrumbs={[]}
               showBreadcrumbs={false}
               onRenderComplete={NOOP}
+              hideChildren={!isCurrentLine}
             />
           </LineByLineItem>
         );

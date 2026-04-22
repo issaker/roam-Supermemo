@@ -72,6 +72,7 @@ import {
 } from '~/models/session';
 import useLineByLineReview, { shouldReinsertLblCard } from '~/hooks/useLineByLineReview';
 export { shouldReinsertLblCard };
+import useAutoCollapseBlocks from '~/hooks/useAutoCollapseBlocks';
 import useCurrentCardData from '~/hooks/useCurrentCardData';
 import { generateNewSession, updateReviewConfig, getChildSessionData } from '~/queries';
 
@@ -134,6 +135,7 @@ const PracticeOverlay = ({
     lblNextReinsertOffset,
     showBreadcrumbs,
     showModeBorders,
+    autoCollapseBlocks,
   } = settings;
   const todaySelectedTag = today.tags[selectedTag];
 
@@ -302,6 +304,16 @@ const PracticeOverlay = ({
     setShowAnswers,
     setCardQueue,
     childSessionData,
+  });
+
+  useAutoCollapseBlocks({
+    enabled: autoCollapseBlocks,
+    currentCardRefUid,
+    isLineByLineActive,
+    childUidsList,
+    lineByLineCurrentChildIndex,
+    lineByLineIsCardComplete,
+    isOpen,
   });
 
   const effectiveBaseCardData = React.useMemo(() => {

@@ -48,6 +48,7 @@ export const saveSettingsToPage = async (dataPageTitle: string, settings: Settin
       showBreadcrumbs: settings.showBreadcrumbs.toString(),
       showModeBorders: settings.showModeBorders.toString(),
       dailynoteEnabled: settings.dailynoteEnabled.toString(),
+      autoCollapseBlocks: settings.autoCollapseBlocks.toString(),
     };
 
     for (const [key, value] of Object.entries(settingsToSave)) {
@@ -163,6 +164,9 @@ export const loadSettingsFromPage = async (dataPageTitle: string): Promise<Setti
               break;
             case 'dailynoteEnabled':
               loadedSettings.dailynoteEnabled = value === 'true';
+              break;
+            case 'autoCollapseBlocks':
+              loadedSettings.autoCollapseBlocks = value === 'true';
               break;
           }
         }

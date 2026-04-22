@@ -25,6 +25,7 @@ const SettingsForm = React.forwardRef<SettingsFormHandle, SettingsFormProps>(
       rtlEnabled: settings.rtlEnabled,
       shuffleCards: settings.shuffleCards,
       dailynoteEnabled: settings.dailynoteEnabled,
+      autoCollapseBlocks: settings.autoCollapseBlocks,
     });
 
     React.useImperativeHandle(ref, () => ({
@@ -42,6 +43,7 @@ const SettingsForm = React.forwardRef<SettingsFormHandle, SettingsFormProps>(
         rtlEnabled: settings.rtlEnabled,
         shuffleCards: settings.shuffleCards,
         dailynoteEnabled: settings.dailynoteEnabled,
+        autoCollapseBlocks: settings.autoCollapseBlocks,
       });
     }, [
       settings.tagsListString,
@@ -53,6 +55,7 @@ const SettingsForm = React.forwardRef<SettingsFormHandle, SettingsFormProps>(
       settings.rtlEnabled,
       settings.shuffleCards,
       settings.dailynoteEnabled,
+      settings.autoCollapseBlocks,
     ]);
 
     return (
@@ -227,6 +230,25 @@ const SettingsForm = React.forwardRef<SettingsFormHandle, SettingsFormProps>(
           </label>
           <p style={{ fontSize: '12px', color: colors.textMuted, margin: '5px 0 0 0' }}>
             Aggregate all top-level blocks from your DailyNote pages into a special deck for review.
+          </p>
+        </div>
+
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              className="bp3-checkbox"
+              checked={formSettings.autoCollapseBlocks}
+              onChange={(e) => {
+                const value = e.target.checked;
+                setFormSettings((prev) => ({ ...prev, autoCollapseBlocks: value }));
+              }}
+              style={{ marginRight: '8px' }}
+            />
+            <span>Auto Collapse Blocks After Review</span>
+          </label>
+          <p style={{ fontSize: '12px', color: colors.textMuted, margin: '5px 0 0 0' }}>
+            Automatically collapse blocks on the Roam page after reviewing them, keeping your page tidy. In Line-by-Line mode, only the current sub-block stays expanded.
           </p>
         </div>
       </>
