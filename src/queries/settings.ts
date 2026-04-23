@@ -1,5 +1,5 @@
 import { getOrCreatePage, getOrCreateBlockOnPage, getChildBlock } from '~/queries/utils';
-import { defaultSettings, Settings, DeckConfig } from '~/hooks/useSettings';
+import { defaultSettings, Settings } from '~/hooks/useSettings';
 
 const SETTINGS_BLOCK_NAME = 'settings';
 
@@ -175,31 +175,6 @@ export const loadSettingsFromPage = async (dataPageTitle: string): Promise<Setti
       }
     }
 
-    if (!loadedSettings.deckConfigs && (loadedSettings as any).tagsListString) {
-      const str = (loadedSettings as any).tagsListString as string;
-      const deckNames: string[] = [];
-      let current = '';
-      let isInsideQuote = false;
-      for (let i = 0; i < str.length; i++) {
-        const currentChar = str[i];
-        if (currentChar === '"') { isInsideQuote = !isInsideQuote; }
-        else if (currentChar === ',' && !isInsideQuote) { deckNames.push(current.trim()); current = ''; }
-        else { current += currentChar; }
-      }
-      deckNames.push(current.trim());
-
-      const weight = Math.floor(100 / deckNames.length);
-      const remainder = 100 - weight * deckNames.length;
-      const deckConfigs: DeckConfig[] = deckNames.map((name, index) => ({
-        name,
-        swapQA: false,
-        weight: index === 0 ? weight + remainder : weight,
-      }));
-      loadedSettings.deckConfigs = JSON.stringify(deckConfigs);
-      delete (loadedSettings as any).tagsListString;
-    }
-
-    
     // Merge with defaults to ensure all fields are present
     return {
       ...defaultSettings,

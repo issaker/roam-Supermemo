@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { colors } from '~/theme';
-import { Settings } from '~/hooks/useSettings';
+import { Settings, DeckConfig } from '~/hooks/useSettings';
+import { equalizeWeights } from '~/utils/deckWeight';
 import DeckConfigsTable from '~/components/DeckConfigsTable';
 
 export type SettingsFormSettings = Omit<Settings, 'historyCleanupKeepCount' | 'showBreadcrumbs'>;
@@ -63,8 +64,12 @@ const SettingsForm = React.forwardRef<SettingsFormHandle, SettingsFormProps>(
       <>
         <div style={{ marginBottom: '20px' }}>
           <h5 style={{ margin: '0 0 10px 0' }}>Tag Pages (Decks)</h5>
+          <p style={{ fontSize: '12px', color: colors.textMuted, margin: '0 0 8px 0' }}>
+            Each deck's Weight % determines its share of the daily review limit. All weights sum to 100%. Set a deck's weight to 0 to disable its review quota.
+          </p>
           <DeckConfigsTable
             deckConfigs={formSettings.deckConfigs}
+            dailynoteEnabled={formSettings.dailynoteEnabled}
             onChange={(value) => {
               setFormSettings((prev) => ({ ...prev, deckConfigs: value }));
             }}
@@ -92,7 +97,7 @@ const SettingsForm = React.forwardRef<SettingsFormHandle, SettingsFormProps>(
         <div style={{ marginBottom: '20px' }}>
           <h5 style={{ margin: '0 0 10px 0' }}>Daily Review Limit</h5>
           <p style={{ fontSize: '12px', color: colors.textMuted, margin: '0 0 5px 0' }}>
-            Number of cards to review each day. 0 means no limit.
+            Number of cards to review each day. 0 means no limit. When set, each deck receives a proportional share based on its Weight %.
           </p>
           <input
             type="number"
@@ -215,7 +220,31 @@ const SettingsForm = React.forwardRef<SettingsFormHandle, SettingsFormProps>(
               checked={formSettings.dailynoteEnabled}
               onChange={(e) => {
                 const value = e.target.checked;
-                setFormSettings((prev) => ({ ...prev, dailynoteEnabled: value }));
+                setFormSettings((prev) => {
+                  let updatedConfigs: DeckConfig[];
+                  try {
+                    updatedConfigs = JSON.parse(prev.deckConfigs);
+                  } catch {
+                    updatedConfigs = [];
+                  }
+
+                  if (value) {
+                    const hasDailyNote = updatedConfigs.some((d) => d.name === 'DailyNote');
+                    if (!hasDailyNote) {
+                      updatedConfigs = [...updatedConfigs, { name: 'DailyNote', swapQA: false, weight: 0 }];
+                      const weights = equalizeWeights(updatedConfigs.length);
+                      updatedConfigs = updatedConfigs.map((d, i) => ({ ...d, weight: weights[i] }));
+                    }
+                  } else {
+                    updatedConfigs = updatedConfigs.filter((d) => d.name !== 'DailyNote');
+                    if (updatedConfigs.length > 0) {
+                      const weights = equalizeWeights(updatedConfigs.length);
+                      updatedConfigs = updatedConfigs.map((d, i) => ({ ...d, weight: weights[i] }));
+                    }
+                  }
+
+                  return { ...prev, dailynoteEnabled: value, deckConfigs: JSON.stringify(updatedConfigs) };
+                });
               }}
               style={{ marginRight: '8px' }}
             />

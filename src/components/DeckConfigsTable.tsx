@@ -3,11 +3,13 @@ import * as Blueprint from '@blueprintjs/core';
 import styled from '@emotion/styled';
 import { DeckConfig } from '~/hooks/useSettings';
 import { redistributeWeights, equalizeWeights, validateWeight } from '~/utils/deckWeight';
+import { DAILYNOTE_DECK_KEY } from '~/constants';
 import { colors } from '~/theme';
 
 interface DeckConfigsTableProps {
   deckConfigs: string;
   onChange: (deckConfigs: string) => void;
+  dailynoteEnabled: boolean;
 }
 
 const TableWrapper = styled.div`
@@ -40,6 +42,10 @@ const SelectedRow = styled.tr`
   background-color: rgba(137, 191, 255, 0.25);
 `;
 
+const DailyNoteRow = styled.tr`
+  background-color: rgba(255, 235, 59, 0.1);
+`;
+
 const ActionBar = styled.div`
   display: flex;
   gap: 4px;
@@ -55,7 +61,9 @@ const WeightInput = styled.input`
   width: 60px;
 `;
 
-const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChange }) => {
+const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChange, dailynoteEnabled }) => {
+  const isDailyNote = (name: string) => name === DAILYNOTE_DECK_KEY;
+
   const [decks, setDecks] = React.useState<DeckConfig[]>([]);
   const [selectedIndex, setSelectedIndex] = React.useState<number | null>(null);
   const [editingNewName, setEditingNewName] = React.useState<number | null>(null);
@@ -70,6 +78,20 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
       setDecks([]);
     }
   }, [deckConfigs]);
+
+  React.useEffect(() => {
+    if (dailynoteEnabled && !decks.some((d) => d.name === DAILYNOTE_DECK_KEY)) {
+      const newDecks = [...decks, { name: DAILYNOTE_DECK_KEY, swapQA: false, weight: 0 }];
+      const weights = equalizeWeights(newDecks.length);
+      const updated = newDecks.map((d, i) => ({ ...d, weight: weights[i] }));
+      emitChange(updated);
+    } else if (!dailynoteEnabled && decks.some((d) => d.name === DAILYNOTE_DECK_KEY)) {
+      const newDecks = decks.filter((d) => d.name !== DAILYNOTE_DECK_KEY);
+      const weights = equalizeWeights(newDecks.length);
+      const updated = newDecks.map((d, i) => ({ ...d, weight: weights[i] }));
+      emitChange(updated);
+    }
+  }, [dailynoteEnabled]);
 
   const emitChange = (updated: DeckConfig[]) => {
     setDecks(updated);
@@ -156,7 +178,8 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
           {decks.map((deck, index) => {
             const isSelected = selectedIndex === index;
             const isNewName = editingNewName === index;
-            const RowComponent = isSelected ? SelectedRow : 'tr';
+            const isDN = isDailyNote(deck.name);
+            const RowComponent = isSelected ? SelectedRow : (isDN ? DailyNoteRow : 'tr');
 
             return (
               <RowComponent
@@ -165,7 +188,9 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
                 style={{ cursor: 'pointer' }}
               >
                 <td>
-                  {isNewName || deck.name === '' ? (
+                  {isDN ? (
+                    '📅 DailyNote'
+                  ) : isNewName || deck.name === '' ? (
                     <NameInput
                       className="bp3-input"
                       type="text"
@@ -208,7 +233,7 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
           icon="minus"
           small
           onClick={handleDeleteRow}
-          disabled={decks.length <= 1 || selectedIndex === null}
+          disabled={decks.length <= 1 || selectedIndex === null || (selectedIndex !== null && isDailyNote(decks[selectedIndex].name))}
         />
         <Blueprint.Button
           icon="arrow-up"

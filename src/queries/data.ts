@@ -483,7 +483,6 @@ const limitRemainingPracticeData = ({
 
   const deckCaps: Record<string, number> = {};
   for (const tag of tagsList) {
-    if (tag === DAILYNOTE_DECK_KEY) continue;
     if (tag in weightMap) {
       deckCaps[tag] = Math.floor(dailyLimit * (weightMap[tag] / 100));
     }
@@ -592,6 +591,7 @@ const limitRemainingPracticeData = ({
       let addedInThisRound = false;
       for (const tag of tagsList) {
         if (unused <= 0 || newSelected >= targetNew) break;
+        if (tag in weightMap && weightMap[tag] === 0) continue;
 
         const currentSelected = selectedCards[tag];
         if (currentSelected.newUids.length < today.tags[tag].newUids.length) {
@@ -610,6 +610,7 @@ const limitRemainingPracticeData = ({
       let addedInThisRound = false;
       for (const tag of tagsList) {
         if (unused <= 0) break;
+        if (tag in weightMap && weightMap[tag] === 0) continue;
 
         const currentSelected = selectedCards[tag];
         if (currentSelected.dueUids.length < today.tags[tag].dueUids.length) {
@@ -627,6 +628,7 @@ const limitRemainingPracticeData = ({
       let addedInThisRound = false;
       for (const tag of tagsList) {
         if (unused <= 0) break;
+        if (tag in weightMap && weightMap[tag] === 0) continue;
 
         const currentSelected = selectedCards[tag];
         if (currentSelected.newUids.length < today.tags[tag].newUids.length) {

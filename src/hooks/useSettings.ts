@@ -50,7 +50,7 @@ export type Settings = {
 };
 
 export const defaultSettings: Settings = {
-  deckConfigs: '[{"name":"memo","swapQA":false,"weight":100}]',
+  deckConfigs: '[{"name":"memo","swapQA":false,"weight":50},{"name":"DailyNote","swapQA":false,"weight":50}]',
   dataPageTitle: 'roam/memo',
   dailyLimit: 0,
   historyCleanupKeepCount: 3,
