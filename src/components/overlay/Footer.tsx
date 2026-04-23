@@ -49,7 +49,7 @@ const Footer = ({
   currentCardData,
   onStartCrammingClick,
 }) => {
-  const { fixed_multiplier, fixed_unit, baseCardData } = React.useContext(MainContext);
+  const { fixed_multiplier, fixed_unit, baseCardData, currentChildAlgorithm } = React.useContext(MainContext);
   const { algorithm: algorithmFromSession, interaction: interactionFromSession } = usePracticeSession();
 
   const [isIntervalEditorOpen, setIsIntervalEditorOpen] = React.useState(false);
@@ -180,7 +180,8 @@ const Footer = ({
     const dataForEstimates = baseCardData || currentCardData;
     if (!dataForEstimates) return;
 
-    if (!algorithmFromSession) {
+    const effectiveAlgorithm = currentChildAlgorithm || algorithmFromSession;
+    if (!effectiveAlgorithm) {
       console.error('Algorithm not set');
       return;
     }
@@ -188,7 +189,7 @@ const Footer = ({
     const { sm2_interval, sm2_repetitions, sm2_eFactor, progressive_repetitions, progressive_interval } = dataForEstimates;
     const estimates = {};
 
-    const iterateCount = !isGradingAlgorithm(algorithmFromSession) ? 1 : grades.length;
+    const iterateCount = !isGradingAlgorithm(effectiveAlgorithm) ? 1 : grades.length;
     for (let i = 0; i < iterateCount; i++) {
       const grade = grades[i];
       const practiceResultData = generatePracticeData({
@@ -197,16 +198,16 @@ const Footer = ({
         sm2_repetitions,
         sm2_eFactor,
         dateCreated: new Date(),
-        algorithm: algorithmFromSession,
+        algorithm: effectiveAlgorithm,
         interaction: interactionFromSession || InteractionStyle.NORMAL,
-        ...(isFixedTimeAlgorithm(algorithmFromSession) && { fixed_multiplier, fixed_unit }),
+        ...(isFixedTimeAlgorithm(effectiveAlgorithm) && { fixed_multiplier, fixed_unit }),
         progressive_repetitions,
         progressive_interval,
       });
       estimates[grade] = practiceResultData;
     }
     return estimates;
-  }, [baseCardData, currentCardData, fixed_multiplier, fixed_unit, algorithmFromSession, interactionFromSession]);
+  }, [baseCardData, currentCardData, fixed_multiplier, fixed_unit, algorithmFromSession, interactionFromSession, currentChildAlgorithm]);
 
   return (
     <FooterWrapper
@@ -300,9 +301,9 @@ const GradingControlsWrapper = ({
 }) => {
   const { algorithm, interaction, onSelectAlgorithm, onSelectInteraction } = usePracticeSession();
 
-  const isFixedModeActive = isFixedTimeAlgorithm(algorithm);
   const isAutoAdvanceMode = !isGradingAlgorithm(algorithm);
-  const isLblNextActive = isLBLReviewMode(interaction) && isAutoAdvanceMode;
+  const { currentChildIsLblNext } = React.useContext(MainContext);
+  const isLblNextActive = isLBLReviewMode(interaction) && currentChildIsLblNext;
   return (
     <div className="flex items-center flex-wrap justify-evenly gap-3 w-full">
       <button

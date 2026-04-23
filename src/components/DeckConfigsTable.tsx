@@ -58,13 +58,20 @@ const NameInput = styled.input`
 `;
 
 const WeightInput = styled.input`
-  width: 60px;
+  width: 75px;
 `;
 
 const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChange, dailynoteEnabled }) => {
   const isDailyNote = (name: string) => name === DAILYNOTE_DECK_KEY;
 
-  const [decks, setDecks] = React.useState<DeckConfig[]>([]);
+  const [decks, setDecks] = React.useState<DeckConfig[]>(() => {
+    try {
+      const parsed = JSON.parse(deckConfigs);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
   const [selectedIndex, setSelectedIndex] = React.useState<number | null>(null);
   const [editingNewName, setEditingNewName] = React.useState<number | null>(null);
 
@@ -78,20 +85,6 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
       setDecks([]);
     }
   }, [deckConfigs]);
-
-  React.useEffect(() => {
-    if (dailynoteEnabled && !decks.some((d) => d.name === DAILYNOTE_DECK_KEY)) {
-      const newDecks = [...decks, { name: DAILYNOTE_DECK_KEY, swapQA: false, weight: 0 }];
-      const weights = equalizeWeights(newDecks.length);
-      const updated = newDecks.map((d, i) => ({ ...d, weight: weights[i] }));
-      emitChange(updated);
-    } else if (!dailynoteEnabled && decks.some((d) => d.name === DAILYNOTE_DECK_KEY)) {
-      const newDecks = decks.filter((d) => d.name !== DAILYNOTE_DECK_KEY);
-      const weights = equalizeWeights(newDecks.length);
-      const updated = newDecks.map((d, i) => ({ ...d, weight: weights[i] }));
-      emitChange(updated);
-    }
-  }, [dailynoteEnabled]);
 
   const emitChange = (updated: DeckConfig[]) => {
     setDecks(updated);

@@ -97,6 +97,8 @@ interface MainContextProps {
   cardQueueLength: number;
   cardMeta: import('~/models/session').CardMeta | undefined;
   baseCardData: Session | undefined;
+  currentChildAlgorithm: SchedulingAlgorithm | undefined;
+  currentChildIsLblNext: boolean;
 }
 
 // 稳定引用：避免内联函数导致 React.memo 失效
@@ -289,6 +291,8 @@ const PracticeOverlay = ({
     dueChildCount,
     onLineByLineGrade,
     onLineByLineShowAnswer,
+    currentChildAlgorithm,
+    currentChildIsLblNext,
   } = useLineByLineReview({
     currentCardRefUid,
     childUidsList,
@@ -305,6 +309,7 @@ const PracticeOverlay = ({
     setShowAnswers,
     setCardQueue,
     childSessionData,
+    setChildSessionData,
   });
 
   useAutoCollapseBlocks({
@@ -318,27 +323,31 @@ const PracticeOverlay = ({
     if (!isLineByLineActive) return baseCardData;
     const currentChildUid = childUidsList[lineByLineCurrentChildIndex];
     if (!currentChildUid) return baseCardData;
-    return childSessionData[currentChildUid] || generateNewSession({ algorithm });
+    const childSession = childSessionData[currentChildUid];
+    if (childSession) {
+      return { ...childSession, algorithm: childSession.algorithm || algorithm };
+    }
+    return generateNewSession({ algorithm });
   }, [isLineByLineActive, baseCardData, childUidsList, lineByLineCurrentChildIndex, childSessionData, algorithm]);
 
   React.useEffect(() => {
     const effectiveInteraction = (latestSession?.interaction || interaction) as InteractionStyle | undefined;
-    const effectiveAlgorithm = (latestSession?.algorithm || algorithm) as SchedulingAlgorithm | undefined;
     const effectiveIsLBL = isLBLReviewMode(effectiveInteraction) && hasBlockChildrenUids;
-    const effectiveIsLblNext = effectiveIsLBL && !isGradingAlgorithm(effectiveAlgorithm);
 
-    if (effectiveIsLblNext) {
-      setShowAnswers(true);
-    } else if (effectiveIsLBL) {
-      setShowAnswers(false);
-    } else if (!isGradingAlgorithm(effectiveAlgorithm)) {
+    if (effectiveIsLBL) {
+      if (currentChildIsLblNext) {
+        setShowAnswers(true);
+      } else {
+        setShowAnswers(false);
+      }
+    } else if (!isGradingAlgorithm(algorithm)) {
       setShowAnswers(true);
     } else if (hasBlockChildren || hasCloze) {
       setShowAnswers(false);
     } else {
       setShowAnswers(true);
     }
-  }, [hasBlockChildren, hasCloze, hasBlockChildrenUids, algorithm, interaction, currentCardRefUid, latestSession]);
+  }, [hasBlockChildren, hasCloze, hasBlockChildrenUids, algorithm, interaction, currentCardRefUid, latestSession, currentChildIsLblNext]);
 
   const onTagChange = async (tag) => {
     setCurrentIndex(0);
@@ -538,6 +547,48 @@ const PracticeOverlay = ({
   const onSelectAlgorithm = React.useCallback(
     async (newAlgorithm: SchedulingAlgorithm) => {
       if (!currentCardRefUid) return;
+
+      if (isLineByLineActive && !lineByLineIsCardComplete) {
+        const currentChildUid = childUidsList[lineByLineCurrentChildIndex];
+        if (!currentChildUid) return;
+
+        const existingChildSession = childSessionData[currentChildUid] || generateNewSession({ algorithm: newAlgorithm });
+
+        setChildSessionData((prev) => ({
+          ...prev,
+          [currentChildUid]: {
+            ...existingChildSession,
+            algorithm: newAlgorithm,
+            interaction: InteractionStyle.NORMAL,
+          },
+        }));
+
+        setSessionOverrides((prev) => ({
+          ...prev,
+          [currentChildUid]: {
+            ...existingChildSession,
+            algorithm: newAlgorithm,
+            interaction: InteractionStyle.NORMAL,
+          },
+        }));
+
+        applyOptimisticCardMeta({
+          ...cardMeta,
+          algorithm: newAlgorithm,
+          interaction: interaction,
+        });
+
+        await updateReviewConfig({
+          refUid: currentChildUid,
+          dataPageTitle,
+          algorithm: newAlgorithm,
+          interaction: InteractionStyle.NORMAL,
+        });
+
+        fetchPracticeData();
+        return;
+      }
+
       if (!interaction) throw new Error('interaction is undefined in onSelectAlgorithm');
 
       setSessionOverrides((prev) => ({
@@ -572,6 +623,13 @@ const PracticeOverlay = ({
       applyOptimisticCardMeta,
       fetchPracticeData,
       interaction,
+      isLineByLineActive,
+      lineByLineIsCardComplete,
+      childUidsList,
+      lineByLineCurrentChildIndex,
+      childSessionData,
+      setChildSessionData,
+      setSessionOverrides,
     ]
   );
 
@@ -640,7 +698,9 @@ const PracticeOverlay = ({
     cardQueueLength: cardQueue.length,
     cardMeta,
     baseCardData: effectiveBaseCardData,
-  }), [fixed_multiplier, setFixed_multiplier, fixed_unit, setFixed_unit, onPracticeClick, currentIndex, renderMode, isLineByLineActive, lineByLineCurrentChildIndex, childUidsList, dueChildCount, cardQueue.length, cardMeta, effectiveBaseCardData]);
+    currentChildAlgorithm: isLineByLineActive ? currentChildAlgorithm : undefined,
+    currentChildIsLblNext: isLineByLineActive ? currentChildIsLblNext : false,
+  }), [fixed_multiplier, setFixed_multiplier, fixed_unit, setFixed_unit, onPracticeClick, currentIndex, renderMode, isLineByLineActive, lineByLineCurrentChildIndex, childUidsList, dueChildCount, cardQueue.length, cardMeta, effectiveBaseCardData, currentChildAlgorithm, currentChildIsLblNext]);
 
   if (!todaySelectedTag) {
     return null;

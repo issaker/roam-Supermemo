@@ -159,64 +159,6 @@ const SettingsForm = React.forwardRef<SettingsFormHandle, SettingsFormProps>(
             <input
               type="checkbox"
               className="bp3-checkbox"
-              checked={formSettings.showModeBorders}
-              onChange={(e) => {
-                const value = e.target.checked;
-                setFormSettings((prev) => ({ ...prev, showModeBorders: value }));
-              }}
-              style={{ marginRight: '8px' }}
-            />
-            <span>Show Review Mode Borders</span>
-          </label>
-          <p style={{ fontSize: '12px', color: colors.textMuted, margin: '5px 0 0 0' }}>
-            Show the colored dialog border that marks the current card&apos;s algorithm (green=SM2, orange=Progressive, blue=Fixed Time).
-          </p>
-        </div>
-
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              className="bp3-checkbox"
-              checked={formSettings.rtlEnabled}
-              onChange={(e) => {
-                const value = e.target.checked;
-                setFormSettings((prev) => ({ ...prev, rtlEnabled: value }));
-              }}
-              style={{ marginRight: '8px' }}
-            />
-            <span>Right-to-Left (RTL) Enabled</span>
-          </label>
-          <p style={{ fontSize: '12px', color: colors.textMuted, margin: '5px 0 0 0' }}>
-            Enable RTL for languages like Arabic, Hebrew, etc.
-          </p>
-        </div>
-
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              className="bp3-checkbox"
-              checked={formSettings.shuffleCards}
-              onChange={(e) => {
-                const value = e.target.checked;
-                setFormSettings((prev) => ({ ...prev, shuffleCards: value }));
-              }}
-              style={{ marginRight: '8px' }}
-            />
-            <span>Shuffle Cards</span>
-          </label>
-          <p style={{ fontSize: '12px', color: colors.textMuted, margin: '5px 0 0 0' }}>
-            OFF: Due cards sorted by urgency (most overdue → hardest → least mature). New cards in
-            reverse creation order. ON: All cards randomly shuffled.
-          </p>
-        </div>
-
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              className="bp3-checkbox"
               checked={formSettings.dailynoteEnabled}
               onChange={(e) => {
                 const value = e.target.checked;
@@ -260,6 +202,26 @@ const SettingsForm = React.forwardRef<SettingsFormHandle, SettingsFormProps>(
             <input
               type="checkbox"
               className="bp3-checkbox"
+              checked={formSettings.shuffleCards}
+              onChange={(e) => {
+                const value = e.target.checked;
+                setFormSettings((prev) => ({ ...prev, shuffleCards: value }));
+              }}
+              style={{ marginRight: '8px' }}
+            />
+            <span>Shuffle Cards</span>
+          </label>
+          <p style={{ fontSize: '12px', color: colors.textMuted, margin: '5px 0 0 0' }}>
+            OFF: Due cards sorted by urgency (most overdue → hardest → least mature). New cards in
+            reverse creation order. ON: All cards randomly shuffled.
+          </p>
+        </div>
+
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              className="bp3-checkbox"
               checked={formSettings.autoCollapseBlocks}
               onChange={(e) => {
                 const value = e.target.checked;
@@ -271,6 +233,44 @@ const SettingsForm = React.forwardRef<SettingsFormHandle, SettingsFormProps>(
           </label>
           <p style={{ fontSize: '12px', color: colors.textMuted, margin: '5px 0 0 0' }}>
             Automatically collapse blocks on the Roam page after reviewing them, keeping your page tidy. In Line-by-Line mode, only the current sub-block stays expanded.
+          </p>
+        </div>
+
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              className="bp3-checkbox"
+              checked={formSettings.showModeBorders}
+              onChange={(e) => {
+                const value = e.target.checked;
+                setFormSettings((prev) => ({ ...prev, showModeBorders: value }));
+              }}
+              style={{ marginRight: '8px' }}
+            />
+            <span>Show Review Mode Borders</span>
+          </label>
+          <p style={{ fontSize: '12px', color: colors.textMuted, margin: '5px 0 0 0' }}>
+            Show the colored dialog border that marks the current card&apos;s algorithm (green=SM2, orange=Progressive, blue=Fixed Time).
+          </p>
+        </div>
+
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              className="bp3-checkbox"
+              checked={formSettings.rtlEnabled}
+              onChange={(e) => {
+                const value = e.target.checked;
+                setFormSettings((prev) => ({ ...prev, rtlEnabled: value }));
+              }}
+              style={{ marginRight: '8px' }}
+            />
+            <span>Right-to-Left (RTL) Enabled</span>
+          </label>
+          <p style={{ fontSize: '12px', color: colors.textMuted, margin: '5px 0 0 0' }}>
+            Enable RTL for languages like Arabic, Hebrew, etc.
           </p>
         </div>
       </>

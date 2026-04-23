@@ -1,0 +1,12 @@
+- [x] LBL 模式下评分使用子 block 自身算法：`onLineByLineGrade` 中 `algorithm` 来源为 `childSessionData[childUid].algorithm`，无数据时回退到父级 `algorithm`
+- [x] LBL 模式下切换算法仅修改当前子 block：`onSelectAlgorithm` 在 LBL 模式下 `refUid` 为当前子 block UID，父级 algorithm 不变
+- [x] LBL 模式下不同子 block 可使用不同算法：子 block 1 用 SM2、子 block 2 用 PROGRESSIVE 时两者评分逻辑互不干扰
+- [x] `isLblNext` 基于当前子 block 算法计算：SM2 子 block 显示评分按钮，PROGRESSIVE 子 block 显示 Read+Next
+- [x] 切换算法不导致子行索引回退：`lineByLineCurrentChildIndex` 不因算法切换而重新计算
+- [x] `childSessionData` 在评分后即时更新：`onLineByLineGrade` 完成后 `childSessionData` state 同步更新
+- [x] Footer `isLblNextActive` 在 LBL 模式下基于当前子 block 算法判定
+- [x] Footer `intervalEstimates` 在 LBL 模式下基于当前子 block 算法计算
+- [x] `effectiveBaseCardData` 在 LBL 模式下使用当前子 block 的 algorithm
+- [x] `setShowAnswers` 逻辑在 LBL 模式下基于当前子 block 算法判断
+- [x] Normal 模式下切换算法行为不变：仍修改父级 block 的 algorithm
+- [x] lint 和 typecheck 通过

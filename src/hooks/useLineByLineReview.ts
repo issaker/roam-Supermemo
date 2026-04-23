@@ -82,6 +82,7 @@ interface UseLineByLineReviewInput {
   setShowAnswers: React.Dispatch<React.SetStateAction<boolean>>;
   setCardQueue: React.Dispatch<React.SetStateAction<string[]>>;
   childSessionData: Record<string, Session>;
+  setChildSessionData: React.Dispatch<React.SetStateAction<Record<string, Session>>>;
 }
 
 interface UseLineByLineReviewOutput {
@@ -91,6 +92,8 @@ interface UseLineByLineReviewOutput {
   dueChildCount: number;
   onLineByLineGrade: (grade: number) => void;
   onLineByLineShowAnswer: () => void;
+  currentChildAlgorithm: SchedulingAlgorithm;
+  currentChildIsLblNext: boolean;
 }
 
 export default function useLineByLineReview({
@@ -109,11 +112,21 @@ export default function useLineByLineReview({
   setShowAnswers,
   setCardQueue,
   childSessionData,
+  setChildSessionData,
 }: UseLineByLineReviewInput): UseLineByLineReviewOutput {
-  const isLblNext = !isGradingAlgorithm(algorithm);
-
   const [lineByLineRevealedCount, setLineByLineRevealedCount] = React.useState(0);
   const [lineByLineCurrentChildIndex, setLineByLineCurrentChildIndex] = React.useState(0);
+
+  const currentChildAlgorithm = React.useMemo(() => {
+    if (!isLBLReviewMode || !childUidsList.length || lineByLineCurrentChildIndex >= childUidsList.length) {
+      return algorithm;
+    }
+    const childUid = childUidsList[lineByLineCurrentChildIndex];
+    const childSession = childSessionData[childUid];
+    return childSession?.algorithm || algorithm;
+  }, [isLBLReviewMode, childUidsList, lineByLineCurrentChildIndex, childSessionData, algorithm]);
+
+  const currentChildIsLblNext = !isGradingAlgorithm(currentChildAlgorithm);
 
   const dueChildIndices = React.useMemo(
     () => getDueChildIndices(childUidsList, childSessionData),
@@ -132,12 +145,13 @@ export default function useLineByLineReview({
     const firstDueIndex = findNextDueChildIndex(childUidsList, childSessionData, 0);
     setLineByLineCurrentChildIndex(firstDueIndex);
 
-    if (isLblNext) {
+    if (currentChildIsLblNext) {
       setLineByLineRevealedCount(firstDueIndex + 1);
     } else {
       setLineByLineRevealedCount(firstDueIndex);
     }
-  }, [isLBLReviewMode, isLblNext, currentCardRefUid, childUidsList, childSessionData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLBLReviewMode, currentCardRefUid, childUidsList, childSessionData]);
 
   const lineByLineIsCardComplete =
     isLBLReviewMode && lineByLineCurrentChildIndex >= childUidsList.length;
@@ -147,15 +161,15 @@ export default function useLineByLineReview({
       if (!currentCardRefUid || lineByLineCurrentChildIndex >= childUidsList.length) return;
 
       const childUid = childUidsList[lineByLineCurrentChildIndex];
-      const existingChildSession = childSessionData[childUid] || generateNewSession({ algorithm });
+      const existingChildSession = childSessionData[childUid] || generateNewSession({ algorithm: currentChildAlgorithm });
       const now = new Date();
 
-      if (isLblNext) {
+      if (currentChildIsLblNext) {
         const childPracticeProps = {
           ...existingChildSession,
           refUid: childUid,
           dataPageTitle,
-          algorithm,
+          algorithm: currentChildAlgorithm,
           interaction: InteractionStyle.NORMAL,
         };
         const childResult = generatePracticeData({ ...childPracticeProps, dateCreated: now });
@@ -174,12 +188,17 @@ export default function useLineByLineReview({
           dataPageTitle,
         });
 
+        setChildSessionData((prev) => ({
+          ...prev,
+          [childUid]: { ...existingChildSession, ...childResult, dateCreated: now },
+        }));
+
         setSessionOverrides((prev) => ({
           ...prev,
           [childUid]: { ...existingChildSession, ...childResult, dateCreated: now },
           [currentCardRefUid]: {
             ...currentCardData,
-            algorithm,
+            algorithm: currentChildAlgorithm,
             interaction,
             dateCreated: now,
             nextDueDate: childNextDueDate,
@@ -222,7 +241,7 @@ export default function useLineByLineReview({
         ...existingChildSession,
         refUid: childUid,
         dataPageTitle,
-        algorithm,
+        algorithm: currentChildAlgorithm,
         interaction: InteractionStyle.NORMAL,
         sm2_grade: grade,
       };
@@ -242,12 +261,17 @@ export default function useLineByLineReview({
         dataPageTitle,
       });
 
+      setChildSessionData((prev) => ({
+        ...prev,
+        [childUid]: { ...existingChildSession, ...childResult, dateCreated: now },
+      }));
+
       setSessionOverrides((prev) => ({
         ...prev,
         [childUid]: { ...existingChildSession, ...childResult, dateCreated: now },
         [currentCardRefUid]: {
           ...currentCardData,
-          algorithm,
+          algorithm: currentChildAlgorithm,
           interaction,
           dateCreated: now,
           nextDueDate: childNextDueDate,
@@ -300,14 +324,15 @@ export default function useLineByLineReview({
       childSessionData,
       dataPageTitle,
       setCurrentIndex,
-      isLblNext,
+      currentChildIsLblNext,
       currentCardData,
-      algorithm,
+      currentChildAlgorithm,
       interaction,
       lblNextReinsertOffset,
       forgotReinsertOffset,
       currentIndex,
       setSessionOverrides,
+      setChildSessionData,
       setCardQueue,
       setShowAnswers,
     ]
@@ -325,5 +350,7 @@ export default function useLineByLineReview({
     dueChildCount,
     onLineByLineGrade,
     onLineByLineShowAnswer,
+    currentChildAlgorithm,
+    currentChildIsLblNext,
   };
 }
