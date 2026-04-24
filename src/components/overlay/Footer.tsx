@@ -441,6 +441,7 @@ const GradingControlsWrapper = ({
 
   const { isLineByLine, onLineByLinePrev, onLineByLineNext, currentChildIsLblNext, currentChildAlgorithm } = React.useContext(MainContext);
   const effectiveAlgorithm = isLineByLine ? (currentChildAlgorithm || algorithm) : algorithm;
+  const effectiveInteraction = isLineByLine ? InteractionStyle.NORMAL : interaction;
   const isAutoAdvanceMode = !isGradingAlgorithm(effectiveAlgorithm);
   const isLblNextActive = isLBLReviewMode(interaction) && currentChildIsLblNext;
   return (
@@ -555,11 +556,11 @@ const GradingControlsWrapper = ({
         />
       )}
       <AlgorithmSelector
-        algorithm={algorithm}
+        algorithm={effectiveAlgorithm}
         onSelectAlgorithm={onSelectAlgorithm || (() => {})}
       />
       <InteractionSelector
-        interaction={interaction}
+        interaction={effectiveInteraction}
         onSelectInteraction={onSelectInteraction || (() => {})}
       />
     </div>
