@@ -341,6 +341,7 @@ const PracticeOverlay = ({
     const effectiveIsLBL = isLBLReviewMode(effectiveInteraction) && hasBlockChildrenUids;
 
     if (effectiveIsLBL) {
+      if (Object.keys(childSessionData).length === 0) return;
       if (currentChildIsLblNext) {
         setShowAnswers(true);
       } else {
@@ -353,7 +354,7 @@ const PracticeOverlay = ({
     } else {
       setShowAnswers(true);
     }
-  }, [hasBlockChildren, hasCloze, hasBlockChildrenUids, algorithm, interaction, currentCardRefUid, latestSession, currentChildIsLblNext]);
+  }, [hasBlockChildren, hasCloze, hasBlockChildrenUids, algorithm, interaction, currentCardRefUid, latestSession, currentChildIsLblNext, childSessionData]);
 
   const onTagChange = async (tag) => {
     setCurrentIndex(0);

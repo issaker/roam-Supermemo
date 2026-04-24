@@ -144,6 +144,8 @@ export default function useLineByLineReview({
       return;
     }
 
+    if (Object.keys(childSessionData).length === 0 && childUidsList.length > 0) return;
+
     const firstDueIndex = findNextDueChildIndex(childUidsList, childSessionData, 0);
     setLineByLineCurrentChildIndex(firstDueIndex);
 
@@ -163,15 +165,17 @@ export default function useLineByLineReview({
       if (!currentCardRefUid || lineByLineCurrentChildIndex >= childUidsList.length) return;
 
       const childUid = childUidsList[lineByLineCurrentChildIndex];
-      const existingChildSession = childSessionData[childUid] || generateNewSession({ algorithm: currentChildAlgorithm });
+      const existingChildSession = childSessionData[childUid] || generateNewSession({ algorithm });
+      const effectiveChildAlgorithm = existingChildSession.algorithm || algorithm;
+      const isLblNext = !isGradingAlgorithm(effectiveChildAlgorithm);
       const now = new Date();
 
-      if (currentChildIsLblNext) {
+      if (isLblNext) {
         const childPracticeProps = {
           ...existingChildSession,
           refUid: childUid,
           dataPageTitle,
-          algorithm: currentChildAlgorithm,
+          algorithm: effectiveChildAlgorithm,
           interaction: InteractionStyle.NORMAL,
         };
         const childResult = generatePracticeData({ ...childPracticeProps, dateCreated: now });
@@ -200,7 +204,7 @@ export default function useLineByLineReview({
           [childUid]: { ...existingChildSession, ...childResult, dateCreated: now },
           [currentCardRefUid]: {
             ...currentCardData,
-            algorithm: currentChildAlgorithm,
+            algorithm: effectiveChildAlgorithm,
             interaction,
             dateCreated: now,
             nextDueDate: childNextDueDate,
@@ -236,6 +240,20 @@ export default function useLineByLineReview({
         setCurrentIndex((prev) => prev + 1);
         setLineByLineCurrentChildIndex(nextDueIndex);
         setLineByLineRevealedCount(nextDueIndex + 1);
+
+        if (nextDueIndex < childUidsList.length) {
+          const nextChildUid = childUidsList[nextDueIndex];
+          const nextChildSession = childSessionData[nextChildUid];
+          const nextAlgorithm = (nextChildSession?.algorithm) || algorithm;
+          const nextIsLblNext = !isGradingAlgorithm(nextAlgorithm);
+          const nextIsMastered = nextChildSession?.nextDueDate && nextChildSession.nextDueDate > now;
+          if (nextIsMastered || nextIsLblNext) {
+            setShowAnswers(true);
+          } else {
+            setShowAnswers(false);
+          }
+        }
+
         return;
       }
 
@@ -243,7 +261,7 @@ export default function useLineByLineReview({
         ...existingChildSession,
         refUid: childUid,
         dataPageTitle,
-        algorithm: currentChildAlgorithm,
+        algorithm: effectiveChildAlgorithm,
         interaction: InteractionStyle.NORMAL,
         sm2_grade: grade,
       };
@@ -273,7 +291,7 @@ export default function useLineByLineReview({
         [childUid]: { ...existingChildSession, ...childResult, dateCreated: now },
         [currentCardRefUid]: {
           ...currentCardData,
-          algorithm: currentChildAlgorithm,
+          algorithm: effectiveChildAlgorithm,
           interaction,
           dateCreated: now,
           nextDueDate: childNextDueDate,
@@ -317,7 +335,17 @@ export default function useLineByLineReview({
 
       setLineByLineCurrentChildIndex(nextDueIndex);
       setLineByLineRevealedCount(nextDueIndex);
-      setShowAnswers(false);
+
+      const nextChildUid = childUidsList[nextDueIndex];
+      const nextChildSession = updatedChildSessions[nextChildUid];
+      const nextAlgorithm = nextChildSession?.algorithm || algorithm;
+      const nextIsLblNext = !isGradingAlgorithm(nextAlgorithm);
+      const nextIsMastered = nextChildSession?.nextDueDate && nextChildSession.nextDueDate > now;
+      if (nextIsMastered || nextIsLblNext) {
+        setShowAnswers(true);
+      } else {
+        setShowAnswers(false);
+      }
     },
     [
       currentCardRefUid,
@@ -326,9 +354,8 @@ export default function useLineByLineReview({
       childSessionData,
       dataPageTitle,
       setCurrentIndex,
-      currentChildIsLblNext,
       currentCardData,
-      currentChildAlgorithm,
+      algorithm,
       interaction,
       lblNextReinsertOffset,
       forgotReinsertOffset,
