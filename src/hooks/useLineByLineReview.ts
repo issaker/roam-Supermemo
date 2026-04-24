@@ -92,8 +92,8 @@ interface UseLineByLineReviewOutput {
   dueChildCount: number;
   onLineByLineGrade: (grade: number) => void;
   onLineByLineShowAnswer: () => void;
-  onLineByLineNavigateUp: () => void;
-  onLineByLineNavigateDown: () => void;
+  onLineByLineUp: () => void;
+  onLineByLineDown: () => void;
   currentChildAlgorithm: SchedulingAlgorithm;
   currentChildIsLblNext: boolean;
 }
@@ -144,8 +144,6 @@ export default function useLineByLineReview({
       return;
     }
 
-    if (Object.keys(childSessionData).length === 0 && childUidsList.length > 0) return;
-
     const firstDueIndex = findNextDueChildIndex(childUidsList, childSessionData, 0);
     setLineByLineCurrentChildIndex(firstDueIndex);
 
@@ -165,17 +163,15 @@ export default function useLineByLineReview({
       if (!currentCardRefUid || lineByLineCurrentChildIndex >= childUidsList.length) return;
 
       const childUid = childUidsList[lineByLineCurrentChildIndex];
-      const existingChildSession = childSessionData[childUid] || generateNewSession({ algorithm });
-      const effectiveChildAlgorithm = existingChildSession.algorithm || algorithm;
-      const isLblNext = !isGradingAlgorithm(effectiveChildAlgorithm);
+      const existingChildSession = childSessionData[childUid] || generateNewSession({ algorithm: currentChildAlgorithm });
       const now = new Date();
 
-      if (isLblNext) {
+      if (currentChildIsLblNext) {
         const childPracticeProps = {
           ...existingChildSession,
           refUid: childUid,
           dataPageTitle,
-          algorithm: effectiveChildAlgorithm,
+          algorithm: currentChildAlgorithm,
           interaction: InteractionStyle.NORMAL,
         };
         const childResult = generatePracticeData({ ...childPracticeProps, dateCreated: now });
@@ -204,7 +200,7 @@ export default function useLineByLineReview({
           [childUid]: { ...existingChildSession, ...childResult, dateCreated: now },
           [currentCardRefUid]: {
             ...currentCardData,
-            algorithm: effectiveChildAlgorithm,
+            algorithm: currentChildAlgorithm,
             interaction,
             dateCreated: now,
             nextDueDate: childNextDueDate,
@@ -240,20 +236,6 @@ export default function useLineByLineReview({
         setCurrentIndex((prev) => prev + 1);
         setLineByLineCurrentChildIndex(nextDueIndex);
         setLineByLineRevealedCount(nextDueIndex + 1);
-
-        if (nextDueIndex < childUidsList.length) {
-          const nextChildUid = childUidsList[nextDueIndex];
-          const nextChildSession = childSessionData[nextChildUid];
-          const nextAlgorithm = (nextChildSession?.algorithm) || algorithm;
-          const nextIsLblNext = !isGradingAlgorithm(nextAlgorithm);
-          const nextIsMastered = nextChildSession?.nextDueDate && nextChildSession.nextDueDate > now;
-          if (nextIsMastered || nextIsLblNext) {
-            setShowAnswers(true);
-          } else {
-            setShowAnswers(false);
-          }
-        }
-
         return;
       }
 
@@ -261,7 +243,7 @@ export default function useLineByLineReview({
         ...existingChildSession,
         refUid: childUid,
         dataPageTitle,
-        algorithm: effectiveChildAlgorithm,
+        algorithm: currentChildAlgorithm,
         interaction: InteractionStyle.NORMAL,
         sm2_grade: grade,
       };
@@ -291,7 +273,7 @@ export default function useLineByLineReview({
         [childUid]: { ...existingChildSession, ...childResult, dateCreated: now },
         [currentCardRefUid]: {
           ...currentCardData,
-          algorithm: effectiveChildAlgorithm,
+          algorithm: currentChildAlgorithm,
           interaction,
           dateCreated: now,
           nextDueDate: childNextDueDate,
@@ -335,17 +317,7 @@ export default function useLineByLineReview({
 
       setLineByLineCurrentChildIndex(nextDueIndex);
       setLineByLineRevealedCount(nextDueIndex);
-
-      const nextChildUid = childUidsList[nextDueIndex];
-      const nextChildSession = updatedChildSessions[nextChildUid];
-      const nextAlgorithm = nextChildSession?.algorithm || algorithm;
-      const nextIsLblNext = !isGradingAlgorithm(nextAlgorithm);
-      const nextIsMastered = nextChildSession?.nextDueDate && nextChildSession.nextDueDate > now;
-      if (nextIsMastered || nextIsLblNext) {
-        setShowAnswers(true);
-      } else {
-        setShowAnswers(false);
-      }
+      setShowAnswers(false);
     },
     [
       currentCardRefUid,
@@ -354,8 +326,9 @@ export default function useLineByLineReview({
       childSessionData,
       dataPageTitle,
       setCurrentIndex,
+      currentChildIsLblNext,
       currentCardData,
-      algorithm,
+      currentChildAlgorithm,
       interaction,
       lblNextReinsertOffset,
       forgotReinsertOffset,
@@ -372,54 +345,47 @@ export default function useLineByLineReview({
     setShowAnswers(true);
   }, [setShowAnswers]);
 
-  const onLineByLineNavigateUp = React.useCallback(() => {
+  const onLineByLineUp = React.useCallback(() => {
     if (lineByLineCurrentChildIndex <= 0) return;
 
-    let newIndex: number;
-    if (lineByLineIsCardComplete) {
-      newIndex = childUidsList.length - 1;
-    } else {
-      newIndex = lineByLineCurrentChildIndex - 1;
-    }
+    const prevIndex = lineByLineCurrentChildIndex - 1;
+    const prevChildUid = childUidsList[prevIndex];
+    const prevChildSession = childSessionData[prevChildUid];
+    const prevChildAlgorithm = prevChildSession?.algorithm || algorithm;
+    const isTargetLblNext = !isGradingAlgorithm(prevChildAlgorithm);
 
-    setLineByLineCurrentChildIndex(newIndex);
-    setLineByLineRevealedCount((prev) => Math.max(prev, newIndex + 1));
+    setLineByLineCurrentChildIndex(prevIndex);
+    setLineByLineRevealedCount((prev) => Math.max(prev, prevIndex + 1));
+    setShowAnswers(isTargetLblNext);
+  }, [
+    lineByLineCurrentChildIndex,
+    childUidsList,
+    childSessionData,
+    algorithm,
+    setLineByLineCurrentChildIndex,
+    setShowAnswers,
+  ]);
 
-    const targetChildSession = childSessionData[childUidsList[newIndex]];
-    const targetAlgorithm = targetChildSession?.algorithm || algorithm;
-    const now = new Date();
-    const isMastered = targetChildSession?.nextDueDate && targetChildSession.nextDueDate > now;
-
-    if (isMastered) {
-      setShowAnswers(true);
-    } else if (isGradingAlgorithm(targetAlgorithm)) {
-      setShowAnswers(false);
-    } else {
-      setShowAnswers(true);
-    }
-  }, [lineByLineCurrentChildIndex, lineByLineIsCardComplete, childUidsList, childSessionData, algorithm, setShowAnswers]);
-
-  const onLineByLineNavigateDown = React.useCallback(() => {
+  const onLineByLineDown = React.useCallback(() => {
     if (lineByLineCurrentChildIndex >= childUidsList.length - 1) return;
 
-    const newIndex = lineByLineCurrentChildIndex + 1;
+    const nextIndex = lineByLineCurrentChildIndex + 1;
+    const nextChildUid = childUidsList[nextIndex];
+    const nextChildSession = childSessionData[nextChildUid];
+    const nextChildAlgorithm = nextChildSession?.algorithm || algorithm;
+    const isTargetLblNext = !isGradingAlgorithm(nextChildAlgorithm);
 
-    setLineByLineCurrentChildIndex(newIndex);
-    setLineByLineRevealedCount((prev) => Math.max(prev, newIndex + 1));
-
-    const targetChildSession = childSessionData[childUidsList[newIndex]];
-    const targetAlgorithm = targetChildSession?.algorithm || algorithm;
-    const now = new Date();
-    const isMastered = targetChildSession?.nextDueDate && targetChildSession.nextDueDate > now;
-
-    if (isMastered) {
-      setShowAnswers(true);
-    } else if (isGradingAlgorithm(targetAlgorithm)) {
-      setShowAnswers(false);
-    } else {
-      setShowAnswers(true);
-    }
-  }, [lineByLineCurrentChildIndex, childUidsList, childSessionData, algorithm, setShowAnswers]);
+    setLineByLineCurrentChildIndex(nextIndex);
+    setLineByLineRevealedCount((prev) => Math.max(prev, nextIndex + 1));
+    setShowAnswers(isTargetLblNext);
+  }, [
+    lineByLineCurrentChildIndex,
+    childUidsList,
+    childSessionData,
+    algorithm,
+    setLineByLineCurrentChildIndex,
+    setShowAnswers,
+  ]);
 
   return {
     lineByLineRevealedCount,
@@ -428,8 +394,8 @@ export default function useLineByLineReview({
     dueChildCount,
     onLineByLineGrade,
     onLineByLineShowAnswer,
-    onLineByLineNavigateUp,
-    onLineByLineNavigateDown,
+    onLineByLineUp,
+    onLineByLineDown,
     currentChildAlgorithm,
     currentChildIsLblNext,
   };

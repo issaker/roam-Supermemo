@@ -100,8 +100,6 @@ interface MainContextProps {
   currentChildAlgorithm: SchedulingAlgorithm | undefined;
   currentChildIsLblNext: boolean;
   lineByLineIsCardComplete: boolean;
-  onLineByLineNavigateUp: (() => void) | undefined;
-  onLineByLineNavigateDown: (() => void) | undefined;
 }
 
 // 稳定引用：避免内联函数导致 React.memo 失效
@@ -295,8 +293,8 @@ const PracticeOverlay = ({
     dueChildCount,
     onLineByLineGrade,
     onLineByLineShowAnswer,
-    onLineByLineNavigateUp,
-    onLineByLineNavigateDown,
+    onLineByLineUp,
+    onLineByLineDown,
     currentChildAlgorithm,
     currentChildIsLblNext,
   } = useLineByLineReview({
@@ -341,7 +339,6 @@ const PracticeOverlay = ({
     const effectiveIsLBL = isLBLReviewMode(effectiveInteraction) && hasBlockChildrenUids;
 
     if (effectiveIsLBL) {
-      if (Object.keys(childSessionData).length === 0) return;
       if (currentChildIsLblNext) {
         setShowAnswers(true);
       } else {
@@ -354,7 +351,7 @@ const PracticeOverlay = ({
     } else {
       setShowAnswers(true);
     }
-  }, [hasBlockChildren, hasCloze, hasBlockChildrenUids, algorithm, interaction, currentCardRefUid, latestSession, currentChildIsLblNext, childSessionData]);
+  }, [hasBlockChildren, hasCloze, hasBlockChildrenUids, algorithm, interaction, currentCardRefUid, latestSession, currentChildIsLblNext]);
 
   const onTagChange = async (tag) => {
     setCurrentIndex(0);
@@ -716,9 +713,7 @@ const PracticeOverlay = ({
     currentChildAlgorithm: isLineByLineActive ? currentChildAlgorithm : undefined,
     currentChildIsLblNext: isLineByLineActive ? currentChildIsLblNext : false,
     lineByLineIsCardComplete: isLineByLineActive ? lineByLineIsCardComplete : false,
-    onLineByLineNavigateUp: isLineByLineActive ? onLineByLineNavigateUp : undefined,
-    onLineByLineNavigateDown: isLineByLineActive ? onLineByLineNavigateDown : undefined,
-  }), [fixed_multiplier, setFixed_multiplier, fixed_unit, setFixed_unit, onPracticeClick, currentIndex, renderMode, isLineByLineActive, lineByLineCurrentChildIndex, childUidsList, dueChildCount, cardQueue.length, cardMeta, effectiveBaseCardData, currentChildAlgorithm, currentChildIsLblNext, lineByLineIsCardComplete, onLineByLineNavigateUp, onLineByLineNavigateDown]);
+  }), [fixed_multiplier, setFixed_multiplier, fixed_unit, setFixed_unit, onPracticeClick, currentIndex, renderMode, isLineByLineActive, lineByLineCurrentChildIndex, childUidsList, dueChildCount, cardQueue.length, cardMeta, effectiveBaseCardData, currentChildAlgorithm, currentChildIsLblNext, lineByLineIsCardComplete]);
 
   if (!todaySelectedTag) {
     return null;
@@ -818,6 +813,8 @@ const PracticeOverlay = ({
           onPracticeClick={onPracticeClick}
           onSkipClick={onSkipClick}
           onPrevClick={onPrevClick}
+          onLineByLineUp={onLineByLineUp}
+          onLineByLineDown={onLineByLineDown}
           setShowAnswers={
             isLineByLineActive && !lineByLineIsCardComplete ? onLineByLineShowAnswer : setShowAnswers
           }

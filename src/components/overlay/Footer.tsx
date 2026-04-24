@@ -43,13 +43,15 @@ const Footer = ({
   onPracticeClick,
   onSkipClick,
   onPrevClick,
+  onLineByLineUp,
+  onLineByLineDown,
   isDone,
   hasCards,
   onCloseCallback,
   currentCardData,
   onStartCrammingClick,
 }) => {
-  const { fixed_multiplier, fixed_unit, baseCardData, currentChildAlgorithm, isLineByLine, lineByLineIsCardComplete, onLineByLineNavigateUp, onLineByLineNavigateDown } = React.useContext(MainContext);
+  const { fixed_multiplier, fixed_unit, baseCardData, currentChildAlgorithm, isLineByLine, lineByLineIsCardComplete } = React.useContext(MainContext);
   const { algorithm: algorithmFromSession, interaction: interactionFromSession } = usePracticeSession();
 
   const [isIntervalEditorOpen, setIsIntervalEditorOpen] = React.useState(false);
@@ -144,6 +146,20 @@ const Footer = ({
         onKeyDown: onPrevClick,
       },
       {
+        combo: 'up',
+        global: true,
+        label: 'Previous Line',
+        onKeyDown: onLineByLineUp,
+        disabled: !isLineByLine,
+      },
+      {
+        combo: 'down',
+        global: true,
+        label: 'Next Line',
+        onKeyDown: onLineByLineDown,
+        disabled: !isLineByLine,
+      },
+      {
         combo: 'F',
         global: true,
         label: 'Grade 0',
@@ -171,22 +187,8 @@ const Footer = ({
         onKeyDown: toggleIntervalEditorOpen,
         disabled: !isFixedTimeAlgorithm(algorithmFromSession),
       },
-      {
-        combo: 'up',
-        global: true,
-        label: 'Navigate Up',
-        onKeyDown: () => onLineByLineNavigateUp?.(),
-        disabled: !isLineByLine || !onLineByLineNavigateUp,
-      },
-      {
-        combo: 'down',
-        global: true,
-        label: 'Navigate Down',
-        onKeyDown: () => onLineByLineNavigateDown?.(),
-        disabled: !isLineByLine || !onLineByLineNavigateDown,
-      },
     ],
-    [skipFn, onPrevClick, showAnswers, showAnswerFn, intervalPractice, gradeFn, algorithmFromSession, onLineByLineNavigateUp, onLineByLineNavigateDown, isLineByLine]
+    [skipFn, onPrevClick, onLineByLineUp, onLineByLineDown, isLineByLine, showAnswers, showAnswerFn, intervalPractice, gradeFn, algorithmFromSession]
   );
   const { handleKeyDown, handleKeyUp } = Blueprint.useHotkeys(hotkeys);
 
@@ -242,14 +244,20 @@ const Footer = ({
           <LblCompletedControls
             onPrevClick={onPrevClick}
             onNextClick={skipFn}
-            onLineByLineNavigateUp={onLineByLineNavigateUp}
+            onLineByLineUp={onLineByLineUp}
+            onLineByLineDown={onLineByLineDown}
           />
         ) : !showAnswers ? (
-          <AnswerHiddenControls
-            activateButtonFn={activateButtonFn}
-            showAnswerFn={showAnswerFn}
-            activeButtonKey={activeButtonKey}
-          />
+          <div className="flex items-center gap-3">
+            {isLineByLine && (
+              <LblUpDownControls onLineByLineUp={onLineByLineUp} onLineByLineDown={onLineByLineDown} />
+            )}
+            <AnswerHiddenControls
+              activateButtonFn={activateButtonFn}
+              showAnswerFn={showAnswerFn}
+              activeButtonKey={activeButtonKey}
+            />
+          </div>
         ) : (
           <GradingControlsWrapper
             activeButtonKey={activeButtonKey}
@@ -260,6 +268,8 @@ const Footer = ({
             isIntervalEditorOpen={isIntervalEditorOpen}
             toggleIntervalEditorOpen={toggleIntervalEditorOpen}
             onPrevClick={onPrevClick}
+            onLineByLineUp={onLineByLineUp}
+            onLineByLineDown={onLineByLineDown}
           />
         )}
       </FooterActionsWrapper>
@@ -309,15 +319,15 @@ const FinishedControls = ({ onStartCrammingClick, onCloseCallback }) => {
   );
 };
 
-const LblCompletedControls = ({ onPrevClick, onNextClick, onLineByLineNavigateUp }) => (
-  <div className="flex items-center gap-3">
+const LblUpDownControls = ({ onLineByLineUp, onLineByLineDown }) => (
+  <div className="flex items-center gap-1">
     <button
       type="button"
-      aria-label="Navigate Up"
+      aria-label="Previous line"
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        onLineByLineNavigateUp?.();
+        onLineByLineUp();
       }}
       className="bp3-button bp3-minimal"
       style={{
@@ -332,6 +342,33 @@ const LblCompletedControls = ({ onPrevClick, onNextClick, onLineByLineNavigateUp
     >
       ▲
     </button>
+    <button
+      type="button"
+      aria-label="Next line"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onLineByLineDown();
+      }}
+      className="bp3-button bp3-minimal"
+      style={{
+        minWidth: '44px',
+        minHeight: '44px',
+        padding: '0 10px',
+        fontSize: '18px',
+        lineHeight: 1,
+        touchAction: 'manipulation',
+        WebkitTapHighlightColor: 'transparent',
+      }}
+    >
+      ▼
+    </button>
+  </div>
+);
+
+const LblCompletedControls = ({ onPrevClick, onNextClick, onLineByLineUp, onLineByLineDown }) => (
+  <div className="flex items-center gap-3">
+    <LblUpDownControls onLineByLineUp={onLineByLineUp} onLineByLineDown={onLineByLineDown} />
     <button
       type="button"
       aria-label="Previous"
@@ -387,37 +424,19 @@ const GradingControlsWrapper = ({
   isIntervalEditorOpen,
   toggleIntervalEditorOpen,
   onPrevClick,
+  onLineByLineUp,
+  onLineByLineDown,
 }) => {
   const { algorithm, interaction, onSelectAlgorithm, onSelectInteraction } = usePracticeSession();
+  const { isLineByLine } = React.useContext(MainContext);
 
   const isAutoAdvanceMode = !isGradingAlgorithm(algorithm);
-  const { currentChildIsLblNext, isLineByLine, onLineByLineNavigateUp, onLineByLineNavigateDown, lineByLineCurrentIndex, lineByLineTotal } = React.useContext(MainContext);
+  const { currentChildIsLblNext } = React.useContext(MainContext);
   const isLblNextActive = isLBLReviewMode(interaction) && currentChildIsLblNext;
   return (
     <div className="flex items-center flex-wrap justify-evenly gap-3 w-full">
       {isLineByLine && (
-        <button
-          type="button"
-          aria-label="Navigate Up"
-          disabled={lineByLineCurrentIndex <= 1}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onLineByLineNavigateUp?.();
-          }}
-          className="bp3-button bp3-minimal"
-          style={{
-            minWidth: '44px',
-            minHeight: '44px',
-            padding: '0 10px',
-            fontSize: '18px',
-            lineHeight: 1,
-            touchAction: 'manipulation',
-            WebkitTapHighlightColor: 'transparent',
-          }}
-        >
-          ▲
-        </button>
+        <LblUpDownControls onLineByLineUp={onLineByLineUp} onLineByLineDown={onLineByLineDown} />
       )}
       <button
         type="button"
@@ -461,30 +480,6 @@ const GradingControlsWrapper = ({
       >
         ▶
       </button>
-      {isLineByLine && (
-        <button
-          type="button"
-          aria-label="Navigate Down"
-          disabled={lineByLineCurrentIndex >= lineByLineTotal || lineByLineTotal === 0}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onLineByLineNavigateDown?.();
-          }}
-          className="bp3-button bp3-minimal"
-          style={{
-            minWidth: '44px',
-            minHeight: '44px',
-            padding: '0 10px',
-            fontSize: '18px',
-            lineHeight: 1,
-            touchAction: 'manipulation',
-            WebkitTapHighlightColor: 'transparent',
-          }}
-        >
-          ▼
-        </button>
-      )}
       {isLblNextActive ? (
         <LblNextControls
           activeButtonKey={activeButtonKey}
