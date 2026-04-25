@@ -285,10 +285,14 @@ const PracticeOverlay = ({
   const isLineByLineActive = isLBLReview;
 
   const childUidsList = React.useMemo(() => blockInfo.childrenUids || [], [blockInfo.childrenUids]);
+  const childSessionScopeKey = React.useMemo(
+    () => `${currentCardRefUid || 'none'}::${currentIndex}::${childUidsList.join(',')}`,
+    [currentCardRefUid, currentIndex, childUidsList]
+  );
 
   const [childSessionData, setChildSessionData] = React.useState<Record<string, Session>>({});
   const [isChildSessionLoading, setIsChildSessionLoading] = React.useState(false);
-  const [loadedChildSessionOwnerUid, setLoadedChildSessionOwnerUid] = React.useState<string | null>(null);
+  const [loadedChildSessionScopeKey, setLoadedChildSessionScopeKey] = React.useState<string | null>(null);
   const childSessionDataRef = React.useRef<Record<string, Session>>({});
   React.useEffect(() => {
     childSessionDataRef.current = childSessionData;
@@ -300,13 +304,13 @@ const PracticeOverlay = ({
     if (!isLineByLineActive || !childUidsList.length || !dataPageTitle) {
       setChildSessionData({});
       setIsChildSessionLoading(false);
-      setLoadedChildSessionOwnerUid(null);
+      setLoadedChildSessionScopeKey(null);
       return;
     }
     let cancelled = false;
     setChildSessionData({});
     setIsChildSessionLoading(true);
-    setLoadedChildSessionOwnerUid(null);
+    setLoadedChildSessionScopeKey(null);
     getChildSessionData({ childUids: childUidsList, dataPageTitle }).then((data) => {
       if (!cancelled) {
         const mergedChildSessions = {
@@ -320,7 +324,7 @@ const PracticeOverlay = ({
         };
         setChildSessionData(mergedChildSessions);
         setIsChildSessionLoading(false);
-        setLoadedChildSessionOwnerUid(currentCardRefUid || null);
+        setLoadedChildSessionScopeKey(childSessionScopeKey);
       }
     }).catch(() => {
       if (!cancelled) {
@@ -328,7 +332,7 @@ const PracticeOverlay = ({
       }
     });
     return () => { cancelled = true; };
-  }, [isLineByLineActive, childUidsList, dataPageTitle, currentCardRefUid, currentIndex, sessionOverrides]);
+  }, [isLineByLineActive, childUidsList, dataPageTitle, currentCardRefUid, currentIndex, sessionOverrides, childSessionScopeKey]);
 
   const {
     lineByLineRevealedCount,
@@ -346,7 +350,7 @@ const PracticeOverlay = ({
     childUidsList,
     isLBLReviewMode: isLineByLineActive,
     hasLoadedChildSessionsForCurrentCard:
-      loadedChildSessionOwnerUid === currentCardRefUid && !isChildSessionLoading,
+      loadedChildSessionScopeKey === childSessionScopeKey && !isChildSessionLoading,
     dataPageTitle,
     lblNextReinsertOffset,
     forgotReinsertOffset,
