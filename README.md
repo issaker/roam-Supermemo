@@ -151,6 +151,25 @@ LBL (Line-by-Line) mode implements a **dual-queue navigation system** — a seco
 - After grading, the system auto-advances to the next due child block
 - Re-grading a previously studied child block overrides its session data (with on-screen reminder)
 
+##### Interaction Mode Scope
+
+Interaction mode (Normal/LBL) is a **parent-level property only**:
+
+- Child blocks always have `interaction: NORMAL` — they never store or read interaction fields
+- `InteractionSelector` always displays the parent card's interaction, regardless of which child line is active
+- Switching interaction mode operates on the parent card directly
+- When a child block becomes an independent card, it defaults to `NORMAL` interaction mode
+
+##### SM2 Interaction in LBL Mode
+
+When using SM2 (a Q&A grading algorithm) within LBL mode, a special interaction flow applies:
+
+1. **Switching to SM2**: The system auto-navigates back one line and hides the SM2 line, showing a "Show Answer" button
+2. **Clicking "Show Answer"**: Reveals the SM2 line and displays grading buttons for re-evaluation
+3. **This logic only applies to LBL mode** — Normal cards' SM2 switch only affects hide/re-answer functionality
+
+> **⚠️ Note for future algorithm developers**: When adding new Q&A grading algorithms, follow this same interaction pattern in LBL mode — switch should trigger back-navigation + hide, and Show Answer should reveal + advance.
+
 ### Data Model
 
 All practice data is stored on a Roam page (default: `roam/memo`). Each card's data follows a **unified session-block architecture** — all fields are stored in session records, with no separate meta block.

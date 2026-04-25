@@ -26,6 +26,23 @@
  * - The two queues are fully independent and parallel
  * - ▲/▼ only change the viewing position; grading advances to the next due child block
  * - Card change triggers position reset (needsPositioningRef); algorithm switch does not
+ *
+ * Interaction mode scope:
+ * - Interaction mode (Normal/LBL) is a PARENT-LEVEL property only
+ * - Child blocks always have interaction=NORMAL; they never store or read interaction fields
+ * - InteractionSelector always displays the parent card's interaction, regardless of current child line
+ * - Switching interaction mode operates on the parent card directly
+ *
+ * SM2 (grading algorithm) interaction in LBL mode:
+ * - When switching to SM2: auto-navigate back one line and hide the SM2 line (onLineByLineSwitchToGradingAlgorithm)
+ * - Show Answer in this context: advance to the hidden SM2 line, reveal it, show grading buttons
+ * - This interaction logic ONLY applies to LBL mode; Normal cards' SM2 switch only affects hide/re-answer
+ * - IMPORTANT: When adding new Q&A grading algorithms in the future, follow this same pattern in LBL mode
+ *
+ * Line rendering control:
+ * - ▲ (up): revealedCount = newIndex + 1 (hide all lines below)
+ * - ▼ (down): revealedCount = max(prev, newIndex + 1) (reveal target line)
+ * - Invariant: revealedCount >= currentChildIndex + 1 (current line always rendered)
  */
 import * as React from 'react';
 import { SchedulingAlgorithm, InteractionStyle, Session, isGradingAlgorithm } from '~/models/session';
@@ -103,6 +120,7 @@ interface UseLineByLineReviewOutput {
   currentChildIsLblNext: boolean;
   onLineByLinePrev: () => void;
   onLineByLineNext: () => void;
+  onLineByLineSwitchToGradingAlgorithm: () => void;
 }
 
 export default function useLineByLineReview({
@@ -166,12 +184,8 @@ export default function useLineByLineReview({
     const firstDueIndex = findNextDueChildIndex(childUidsList, childSessionData, 0);
     setLineByLineCurrentChildIndex(firstDueIndex);
 
-    if (currentChildIsLblNext) {
-      setLineByLineRevealedCount(firstDueIndex + 1);
-    } else {
-      setLineByLineRevealedCount(firstDueIndex);
-    }
-  }, [isLBLReviewMode, childUidsList, childSessionData, currentChildIsLblNext]);
+    setLineByLineRevealedCount(firstDueIndex + 1);
+  }, [isLBLReviewMode, childUidsList, childSessionData]);
 
   const lineByLineIsCardComplete =
     isLBLReviewMode && lineByLineCurrentChildIndex >= childUidsList.length;
@@ -190,7 +204,6 @@ export default function useLineByLineReview({
           refUid: childUid,
           dataPageTitle,
           algorithm: currentChildAlgorithm,
-          interaction: InteractionStyle.NORMAL,
         };
         const childResult = generatePracticeData({ ...childPracticeProps, dateCreated: now });
         const childNextDueDate = childResult.nextDueDate;
@@ -262,7 +275,6 @@ export default function useLineByLineReview({
         refUid: childUid,
         dataPageTitle,
         algorithm: currentChildAlgorithm,
-        interaction: InteractionStyle.NORMAL,
         sm2_grade: grade,
       };
       const childResult = generatePracticeData({ ...childPracticeProps, dateCreated: now });
@@ -334,7 +346,7 @@ export default function useLineByLineReview({
       }
 
       setLineByLineCurrentChildIndex(nextDueIndex);
-      setLineByLineRevealedCount(nextDueIndex);
+      setLineByLineRevealedCount(nextDueIndex + 1);
       setShowAnswers(false);
     },
     [
@@ -359,15 +371,31 @@ export default function useLineByLineReview({
   );
 
   const onLineByLineShowAnswer = React.useCallback(() => {
-    setLineByLineRevealedCount((prev) => prev + 1);
+    const nextIndex = lineByLineCurrentChildIndex + 1;
+    const isNextHidden = nextIndex < childUidsList.length && lineByLineRevealedCount <= nextIndex;
+
+    if (isNextHidden) {
+      const nextChildUid = childUidsList[nextIndex];
+      const nextChildSession = nextChildUid ? childSessionData[nextChildUid] : undefined;
+      const isNextGrading = nextChildSession && isGradingAlgorithm(nextChildSession.algorithm);
+
+      if (isNextGrading) {
+        setLineByLineCurrentChildIndex(nextIndex);
+        setLineByLineRevealedCount(nextIndex + 1);
+        setShowAnswers(true);
+        return;
+      }
+    }
+
+    setLineByLineRevealedCount((prev) => Math.max(prev, lineByLineCurrentChildIndex + 1));
     setShowAnswers(true);
-  }, [setShowAnswers]);
+  }, [lineByLineCurrentChildIndex, childUidsList, childSessionData, lineByLineRevealedCount, setShowAnswers]);
 
   const onLineByLinePrev = React.useCallback(() => {
     if (lineByLineCurrentChildIndex <= 0) return;
     const newIndex = lineByLineCurrentChildIndex - 1;
     setLineByLineCurrentChildIndex(newIndex);
-    setLineByLineRevealedCount((prev) => Math.max(prev, newIndex + 1));
+    setLineByLineRevealedCount(newIndex + 1);
   }, [lineByLineCurrentChildIndex]);
 
   const onLineByLineNext = React.useCallback(() => {
@@ -376,6 +404,17 @@ export default function useLineByLineReview({
     setLineByLineCurrentChildIndex(newIndex);
     setLineByLineRevealedCount((prev) => Math.max(prev, newIndex + 1));
   }, [lineByLineCurrentChildIndex, childUidsList.length]);
+
+  const onLineByLineSwitchToGradingAlgorithm = React.useCallback(() => {
+    if (lineByLineCurrentChildIndex > 0) {
+      const newIndex = lineByLineCurrentChildIndex - 1;
+      setLineByLineCurrentChildIndex(newIndex);
+      setLineByLineRevealedCount(newIndex + 1);
+    } else {
+      setLineByLineRevealedCount(1);
+    }
+    setShowAnswers(false);
+  }, [lineByLineCurrentChildIndex, setShowAnswers]);
 
   return {
     lineByLineRevealedCount,
@@ -388,5 +427,6 @@ export default function useLineByLineReview({
     currentChildIsLblNext,
     onLineByLinePrev,
     onLineByLineNext,
+    onLineByLineSwitchToGradingAlgorithm,
   };
 }

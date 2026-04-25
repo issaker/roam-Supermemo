@@ -89,6 +89,8 @@ import { usePracticeSession, PracticeSessionContext } from '~/contexts/PracticeS
  * - Primary queue: ◀/▶ navigate between cards (cardQueue + currentIndex)
  * - Secondary queue (LBL): ▲/▼ navigate between child blocks (childUidsList + lineByLineCurrentChildIndex)
  * - onLineByLinePrev/onLineByLineNext are only available when isLineByLine is true
+ * - Interaction mode (Normal/LBL) is a parent-level property only; InteractionSelector always shows parent's interaction
+ * - In LBL mode, switching to SM2 triggers onLineByLineSwitchToGradingAlgorithm (back one line + hide SM2 line)
  */
 interface MainContextProps {
   fixed_multiplier: number;
@@ -110,6 +112,7 @@ interface MainContextProps {
   lineByLineIsCardComplete: boolean;
   onLineByLinePrev: (() => void) | undefined;
   onLineByLineNext: (() => void) | undefined;
+  onLineByLineSwitchToGradingAlgorithm: (() => void) | undefined;
 }
 
 // 稳定引用：避免内联函数导致 React.memo 失效
@@ -307,6 +310,7 @@ const PracticeOverlay = ({
     onLineByLineNext,
     currentChildAlgorithm,
     currentChildIsLblNext,
+    onLineByLineSwitchToGradingAlgorithm,
   } = useLineByLineReview({
     currentCardRefUid,
     childUidsList,
@@ -355,7 +359,14 @@ const PracticeOverlay = ({
         const currentChildUid = childUidsList[lineByLineCurrentChildIndex];
         const childSession = currentChildUid ? childSessionData[currentChildUid] : undefined;
         const isChildMastered = childSession && childSession.nextDueDate && childSession.nextDueDate > new Date();
-        if (isChildMastered || currentChildIsLblNext) {
+
+        const nextChildIndex = lineByLineCurrentChildIndex + 1;
+        const isNextHiddenGrading = nextChildIndex < childUidsList.length
+            && lineByLineRevealedCount <= nextChildIndex
+            && childSessionData[childUidsList[nextChildIndex]]
+            && isGradingAlgorithm(childSessionData[childUidsList[nextChildIndex]].algorithm);
+
+        if (isChildMastered || (currentChildIsLblNext && !isNextHiddenGrading)) {
           setShowAnswers(true);
         } else {
           setShowAnswers(false);
@@ -368,7 +379,7 @@ const PracticeOverlay = ({
     } else {
       setShowAnswers(true);
     }
-  }, [hasBlockChildren, hasCloze, hasBlockChildrenUids, algorithm, interaction, currentCardRefUid, latestSession, currentChildIsLblNext, lineByLineCurrentChildIndex, childSessionData, childUidsList, lineByLineIsCardComplete]);
+  }, [hasBlockChildren, hasCloze, hasBlockChildrenUids, algorithm, interaction, currentCardRefUid, latestSession, currentChildIsLblNext, lineByLineCurrentChildIndex, childSessionData, childUidsList, lineByLineIsCardComplete, lineByLineRevealedCount]);
 
   const onTagChange = async (tag) => {
     setCurrentIndex(0);
@@ -607,16 +618,18 @@ const PracticeOverlay = ({
           [currentChildUid]: {
             ...existingChildSession,
             algorithm: newAlgorithm,
-            interaction: InteractionStyle.NORMAL,
           },
         }));
+
+        if (isGradingAlgorithm(newAlgorithm)) {
+          onLineByLineSwitchToGradingAlgorithm();
+        }
 
         setSessionOverrides((prev) => ({
           ...prev,
           [currentChildUid]: {
             ...existingChildSession,
             algorithm: newAlgorithm,
-            interaction: InteractionStyle.NORMAL,
           },
         }));
 
@@ -630,7 +643,6 @@ const PracticeOverlay = ({
           refUid: currentChildUid,
           dataPageTitle,
           algorithm: newAlgorithm,
-          interaction: InteractionStyle.NORMAL,
         });
 
         return;
@@ -674,6 +686,7 @@ const PracticeOverlay = ({
       childSessionData,
       setChildSessionData,
       setSessionOverrides,
+      onLineByLineSwitchToGradingAlgorithm,
     ]
   );
 
@@ -744,7 +757,8 @@ const PracticeOverlay = ({
     lineByLineIsCardComplete: isLineByLineActive ? lineByLineIsCardComplete : false,
     onLineByLinePrev: isLineByLineActive ? onLineByLinePrev : undefined,
     onLineByLineNext: isLineByLineActive ? onLineByLineNext : undefined,
-  }), [fixed_multiplier, setFixed_multiplier, fixed_unit, setFixed_unit, onPracticeClick, currentIndex, renderMode, isLineByLineActive, lineByLineCurrentChildIndex, childUidsList, dueChildCount, cardQueue.length, cardMeta, effectiveBaseCardData, currentChildAlgorithm, currentChildIsLblNext, lineByLineIsCardComplete, onLineByLinePrev, onLineByLineNext]);
+    onLineByLineSwitchToGradingAlgorithm: isLineByLineActive ? onLineByLineSwitchToGradingAlgorithm : undefined,
+  }), [fixed_multiplier, setFixed_multiplier, fixed_unit, setFixed_unit, onPracticeClick, currentIndex, renderMode, isLineByLineActive, lineByLineCurrentChildIndex, childUidsList, dueChildCount, cardQueue.length, cardMeta, effectiveBaseCardData, currentChildAlgorithm, currentChildIsLblNext, lineByLineIsCardComplete, onLineByLinePrev, onLineByLineNext, onLineByLineSwitchToGradingAlgorithm]);
 
   if (!todaySelectedTag) {
     return null;

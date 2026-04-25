@@ -419,9 +419,11 @@ const GradingControlsWrapper = ({
 }) => {
   const { algorithm, interaction, onSelectAlgorithm, onSelectInteraction } = usePracticeSession();
 
-  const isAutoAdvanceMode = !isGradingAlgorithm(algorithm);
-  const { isLineByLine, onLineByLinePrev, onLineByLineNext, currentChildIsLblNext } = React.useContext(MainContext);
-  const isLblNextActive = isLBLReviewMode(interaction) && currentChildIsLblNext;
+  const { isLineByLine, onLineByLinePrev, onLineByLineNext, currentChildIsLblNext, baseCardData, currentChildAlgorithm } = React.useContext(MainContext);
+  const effectiveAlgorithm = isLineByLine ? currentChildAlgorithm : algorithm;
+  const isAutoAdvanceMode = !isGradingAlgorithm(effectiveAlgorithm);
+  const effectiveInteraction = isLineByLine ? (baseCardData?.interaction || interaction) : interaction;
+  const isLblNextActive = isLBLReviewMode(effectiveInteraction) && currentChildIsLblNext;
   return (
     <div className="flex items-center flex-wrap justify-evenly gap-3 w-full">
       <button
@@ -535,11 +537,12 @@ const GradingControlsWrapper = ({
         />
       )}
       <AlgorithmSelector
-        algorithm={algorithm}
+        algorithm={effectiveAlgorithm}
         onSelectAlgorithm={onSelectAlgorithm || (() => {})}
       />
+      {/* InteractionSelector: in LBL mode, displays parent card's interaction; switching operates on parent card */}
       <InteractionSelector
-        interaction={interaction}
+        interaction={effectiveInteraction}
         onSelectInteraction={onSelectInteraction || (() => {})}
       />
     </div>

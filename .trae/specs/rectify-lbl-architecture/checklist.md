@@ -1,10 +1,21 @@
-- [ ] LBL 模式下 InteractionSelector 隐藏，只显示 AlgorithmSelector
-- [ ] Normal 模式下两个 Selector 都显示
-- [ ] 初始定位时 `lineByLineRevealedCount = firstDueIndex + 1`，当前行被渲染
-- [ ] SM2 子 block 初始进入时第一行可见（问题隐藏，需 Show Answer 揭示答案）
-- [ ] 上下翻行后 `lineByLineRevealedCount >= lineByLineCurrentChildIndex + 1`
-- [ ] 评分后 `lineByLineRevealedCount` 包含新的当前行
-- [ ] `onLineByLineShowAnswer` 确保当前行可见而非揭示下一行
-- [ ] 算法切换后 ShowAnswer 作用于当前行而非下一行
-- [ ] 切换到 LBL 模式时第一行子 block 正确显示
-- [ ] lint 和 typecheck 通过
+- [x] LBL 模式下 InteractionSelector 显示父级卡片的 interaction 属性
+- [x] LBL 模式下切换交互模式作用于父级卡片
+- [x] LBL 模式下 AlgorithmSelector 显示当前子 block 的算法
+- [x] 子 block 不存储交互模式字段
+- [x] ▲ 上翻行时隐藏当前行下方所有行（revealedCount = newIndex + 1）
+- [x] ▼ 下翻行时逐行渲染目标行
+- [x] 初始定位时 revealedCount = firstDueIndex + 1，当前行被渲染
+- [x] SM2 子 block 初始进入时第一行可见
+- [x] 评分后 revealedCount 包含新的当前行
+- [x] LBL 模式下切换到 SM2 时回退一行并隐藏 SM2 行（当前行 > 0）
+- [x] LBL 模式下切换到 SM2 时在第一行仅隐藏答案（当前行 = 0）
+- [x] Show Answer 在下一行是隐藏 SM2 行时推进并揭示
+- [x] Show Answer 在正常 SM2 流程时显示当前行答案
+- [x] SM2 交互逻辑仅在 LBL 模式下生效，Normal 模式不受影响
+- [x] Normal 模式下不提供上下翻行功能
+- [x] useLineByLineReview.ts 注释包含 SM2 交互逻辑和交互模式作用范围说明
+- [x] PracticeOverlay.tsx 注释包含交互模式仅对一级队列产生影响的说明
+- [x] Footer.tsx 注释包含 InteractionSelector 在 LBL 模式下显示父级属性的说明
+- [x] README 包含交互模式作用范围的设计原则
+- [x] README 包含 SM2 在 LBL 下的交互逻辑说明
+- [x] lint 和 typecheck 通过
