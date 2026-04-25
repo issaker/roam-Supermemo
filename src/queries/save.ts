@@ -31,7 +31,13 @@
  */
 import * as stringUtils from '~/utils/string';
 import * as dateUtils from '~/utils/date';
-import { SchedulingAlgorithm, InteractionStyle, isGradingAlgorithm } from '~/models/session';
+import {
+  SchedulingAlgorithm,
+  InteractionStyle,
+  isGradingAlgorithm,
+  deriveParentNextDueDateFromChildSessions,
+  isSessionDue,
+} from '~/models/session';
 import {
   createChildBlock,
   getChildBlock,
@@ -279,33 +285,21 @@ export const updateParentNextDueDate = async ({
   const childSessions = await getChildSessionData({ childUids, dataPageTitle });
 
   const now = new Date();
-  let hasDueOrUnread = false;
-  let earliestDueDate: Date | null = null;
+  const parentNextDueDate = deriveParentNextDueDateFromChildSessions(
+    childUids,
+    childSessions as Record<string, any>,
+    now
+  );
 
-  for (const uid of childUids) {
-    const session = childSessions[uid] as any;
-    if (!session || !session.nextDueDate) {
-      hasDueOrUnread = true;
-      break;
-    }
-    if (session.nextDueDate <= now) {
-      hasDueOrUnread = true;
-      break;
-    }
-    if (!earliestDueDate || session.nextDueDate < earliestDueDate) {
-      earliestDueDate = session.nextDueDate;
-    }
-  }
-
-  if (hasDueOrUnread) {
+  if (isSessionDue({ nextDueDate: parentNextDueDate }, now)) {
     const todayString = `[[${stringUtils.dateToRoamDateString(now)}]]`;
     await upsertLatestSessionField({
       cardDataBlockUid,
       key: 'nextDueDate',
       value: todayString,
     });
-  } else if (earliestDueDate) {
-    const dueDateString = `[[${stringUtils.dateToRoamDateString(earliestDueDate)}]]`;
+  } else {
+    const dueDateString = `[[${stringUtils.dateToRoamDateString(parentNextDueDate)}]]`;
     await upsertLatestSessionField({
       cardDataBlockUid,
       key: 'nextDueDate',

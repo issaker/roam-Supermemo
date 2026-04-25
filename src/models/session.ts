@@ -139,6 +139,78 @@ export const isGradingAlgorithm = (algorithm: SchedulingAlgorithm | undefined): 
   return algorithm === SchedulingAlgorithm.SM2;
 };
 
+type SessionLike = Pick<Session, 'algorithm' | 'nextDueDate'> | undefined;
+
+export const getSessionAlgorithm = (
+  session: SessionLike,
+  fallback = DEFAULT_REVIEW_CONFIG.algorithm
+): SchedulingAlgorithm => {
+  return session?.algorithm || fallback;
+};
+
+export const isSessionDue = (
+  session: Pick<Session, 'nextDueDate'> | undefined,
+  now = new Date()
+): boolean => {
+  return !session?.nextDueDate || session.nextDueDate <= now;
+};
+
+export const isSessionMastered = (
+  session: Pick<Session, 'nextDueDate'> | undefined,
+  now = new Date()
+): boolean => {
+  return !!session?.nextDueDate && session.nextDueDate > now;
+};
+
+// Shared scheduling semantics used by both NORMAL and LBL queue strategies.
+export const getDueChildIndices = (
+  childUidsList: string[],
+  childSessionData: Record<string, Session>,
+  now = new Date()
+): number[] => {
+  return childUidsList.reduce((indices, uid, index) => {
+    if (isSessionDue(childSessionData[uid], now)) {
+      indices.push(index);
+    }
+    return indices;
+  }, [] as number[]);
+};
+
+export const findNextDueChildIndex = (
+  childUidsList: string[],
+  childSessionData: Record<string, Session>,
+  fromIndex: number,
+  now = new Date()
+): number => {
+  for (let i = fromIndex; i < childUidsList.length; i++) {
+    if (isSessionDue(childSessionData[childUidsList[i]], now)) {
+      return i;
+    }
+  }
+  return childUidsList.length;
+};
+
+export const deriveParentNextDueDateFromChildSessions = (
+  childUidsList: string[],
+  childSessionData: Record<string, Session>,
+  now = new Date()
+): Date => {
+  let earliestFutureDueDate: Date | null = null;
+
+  for (const uid of childUidsList) {
+    const session = childSessionData[uid];
+    if (isSessionDue(session, now)) {
+      return now;
+    }
+
+    if (!earliestFutureDueDate || session!.nextDueDate! < earliestFutureDueDate) {
+      earliestFutureDueDate = session!.nextDueDate!;
+    }
+  }
+
+  return earliestFutureDueDate || now;
+};
+
 export const getAlgorithmIntent = (algorithm: SchedulingAlgorithm | undefined): 'success' | 'warning' | 'primary' | 'none' => {
   switch (algorithm) {
     case SchedulingAlgorithm.SM2: return 'success';

@@ -89,9 +89,21 @@ Color-coded badges in the header bar for instant visual identification:
 
 ## Architecture
 
+### Core Model
+
+Memo is a learning system built around cards and session data.
+
+- `NORMAL` is the primary queue: cards are sorted by urgency and reviewed one by one.
+- `LBL` is not a separate learning system. It is a primary card rendered as an ordered child-card queue.
+- Every real learning unit has independent session data and can use any of the three algorithms.
+- The only semantic difference between `NORMAL` and `LBL` is queue strategy:
+  `NORMAL` sorts cards by urgency, while `LBL` scans child blocks top-to-bottom and jumps to the next due line.
+
+That gives the codebase one scheduling engine, two queue strategies, and one stable session-data format.
+
 ### SchedulingAlgorithm × InteractionStyle
 
-The review system uses a **two-dimensional orthogonal architecture**. Each card is configured by independently choosing a **Scheduling Algorithm** (how intervals are calculated) and an **Interaction Style** (how the card is presented). These two dimensions are fully independent — any algorithm pairs with any interaction style.
+Each top-level review card independently chooses:
 
 | Dimension | Purpose | Values |
 |-----------|---------|--------|
@@ -118,10 +130,10 @@ All definitions are in `src/models/session.ts`.
 
 | Style | Description |
 |-------|-------------|
-| `NORMAL` | Standard card review — show question, reveal answer |
-| `LBL` | Line-by-Line — per-child Q&A with independent scheduling |
+| `NORMAL` | Standard primary queue card |
+| `LBL` | Primary queue card rendered as an ordered child-card queue |
 
-**LBL button bars are identical to Normal mode** — each child block is an independent card, just arranged line-by-line:
+**LBL button bars are identical to Normal mode** because LBL child blocks are still ordinary learning units:
 
 | Algorithm | Normal Button Bar | LBL Button Bar |
 |-----------|-------------------|----------------|
@@ -129,42 +141,42 @@ All definitions are in `src/models/session.ts`.
 | Progressive | Review + Next | Review + Next |
 | Fixed Time | Change Interval + Next | Change Interval + Next |
 
-> **LBL child blocks are Normal cards arranged line-by-line.** The only difference is navigation: Normal cards advance via page turn (setCurrentIndex + 1), LBL child blocks advance to the next due line (findNextDueChildIndex + 1).
+> LBL child blocks are independent cards arranged in reading order. They do not own an interaction mode.
 
 > The `READ` (Incremental Read) interaction has been removed — its functionality is now covered by `LBL + Progressive/Fixed Time`.
 
 #### Dynamic Switching
 Each card's `algorithm` and `interaction` are stored in the latest session block. Changes take effect immediately on card navigation via two independent selectors (bottom-right of grading area).
 
-#### LBL Dual-Queue Architecture
+#### Queue Strategies
 
-LBL (Line-by-Line) mode implements a **dual-queue navigation system** — a secondary queue nested within the primary card queue:
+Memo has two queue layers with different responsibilities:
 
 | Dimension | Primary Queue | Secondary Queue (LBL) |
 |-----------|--------------|----------------------|
 | Navigation | ◀ / ▶ (← / →) | ▲ / ▼ (↑ / ↓) |
 | Scope | Cards in `cardQueue` | Child blocks in `childUidsList` |
-| Grading | No grading on navigation | No grading on navigation |
+| Ordering rule | Urgency sort | Source block order |
 | Completion | Advances to next card | Advances to next due child block |
 
 **Key principles**:
 - The primary queue (`cardQueue` + `currentIndex`) manages navigation between cards via ◀/▶
 - The secondary queue (`childUidsList` + `lineByLineCurrentChildIndex`) manages navigation between child blocks via ▲/▼
-- The two navigation systems are fully independent and parallel
-- Parent block determines LBL mode activation; its algorithm serves as the default for child blocks without session data
-- Each child block is an independent Q&A card with its own algorithm and session data
-- Navigating up/down only changes the viewing position; grading is triggered separately
-- After grading, the system auto-advances to the next due child block
-- Re-grading a previously studied child block overrides its session data (with on-screen reminder)
+- `NORMAL` queue policy lives in `src/models/practice.ts -> sortNormalDueCardUids`
+- `LBL` queue policy lives in `src/models/practice.ts -> getLblQueueState`
+- Child blocks keep independent session records; the parent card only contributes `interaction` and the aggregated `nextDueDate`
+- A child block without session data is treated as due
+- LBL never reorders child blocks; it only scans forward to the next due line
+- Navigating up/down only changes the viewing position; grading still drives learning progression
 
 ##### Interaction Mode Scope
 
 Interaction mode (Normal/LBL) is a **parent-level property only**:
 
-- Child blocks always have `interaction: NORMAL` — they never store or read interaction fields
+- Child blocks are treated as `NORMAL` learning units and do not own an interaction mode
 - `InteractionSelector` always displays the parent card's interaction, regardless of which child line is active
 - Switching interaction mode operates on the parent card directly
-- When a child block becomes an independent card, it defaults to `NORMAL` interaction mode
+- A child block rendered on its own behaves like any other normal card
 
 ##### SM2 ShowAnswer in LBL Mode
 
@@ -175,7 +187,7 @@ SM2's ShowAnswer behavior in LBL mode is **identical to Normal cards**:
 3. **Switching to SM2**: The user stays at the current line — no back-navigation or hiding occurs
 4. **After grading**: Auto-advances to the next due child block (equivalent to Normal card's page turn)
 
-> **⚠️ Note for future algorithm developers**: When adding new Q&A grading algorithms, follow the same ShowAnswer pattern — ShowAnswer is determined by `hasBlockChildren`/`hasCloze`, not by algorithm-specific logic.
+> Note for future maintainers: queue strategy should never change scheduling semantics. New algorithms should plug into the same session model and button-flow rules.
 
 ### Data Model
 
@@ -207,9 +219,24 @@ roam/memo (page)
 - The latest session block is the single source of truth
 - Field naming follows `{owner}_{purpose}` convention: `sm2_*`, `progressive_*`, `fixed_*`
 - Each algorithm only modifies its OWN fields; other fields are inherited unchanged → switching algorithms never loses data
-- LBL child blocks have independent sessions (legacy `lbl_progress` has been migrated)
+- LBL child blocks have independent sessions; parent cards only aggregate child due state
 - `progressive_interval` is the calculated interval (2→6→12→24→48→96 days) based on `progressive_repetitions`
 - `fixed_multiplier` + `fixed_unit` store the user's interval choice for Fixed Time cards
+
+### Data Flow
+
+At runtime the system is intentionally split into four layers:
+
+1. `src/practice.ts`
+   Pure scheduling math for SM2 / Progressive / Fixed Time.
+2. `src/models/session.ts`
+   Shared learning semantics: due/mastered checks, child due detection, parent due aggregation.
+3. `src/models/practice.ts`
+   Queue strategies: primary queue urgency sorting and LBL sequential scanning.
+4. UI + queries
+   `queries/*.ts` read/write session blocks, while `PracticeOverlay` and `useLineByLineReview` render and execute queue state.
+
+If a bug is about "which card or line should appear next", fix the strategy/model layer first, not the component layer.
 
 ### Settings Architecture
 
@@ -241,6 +268,9 @@ The old system read `reviewMode::` fields and decomposed them at runtime on ever
 
 ### Why merge READ into LBL?
 `READ` was functionally identical to `LBL + Progressive`. Since the algorithm already determines LBL behavior (SM2 → grading buttons, Progressive/Fixed Time → Next button), a separate READ type was redundant. Removing it reduces the combination space with zero semantic loss.
+
+### Why treat LBL as a queue strategy instead of a separate card type?
+Because the system's purpose is card learning, not mode-specific behavior. The learning record belongs to the card or child block itself; `LBL` only says "render this primary card as an ordered child queue". This keeps scheduling, storage, and algorithm switching identical across the whole system.
 
 ### Why the `{owner}_{purpose}` field naming convention?
 Old names (`repetitions`, `interval`, `eFactor`) were ambiguous — they didn't indicate which algorithm owned them. New names (`sm2_repetitions`, `progressive_interval`) make field ownership explicit, reducing cross-algorithm pollution bugs.
@@ -283,7 +313,7 @@ src/
 ├── constants.ts           # Shared constants
 ├── models/
 │   ├── session.ts         # Session, CardMeta, SchedulingAlgorithm, FixedTimeUnit, InteractionStyle
-│   └── practice.ts        # Today's review status model
+│   └── practice.ts        # Queue strategies for NORMAL and LBL
 ├── queries/
 │   ├── data.ts            # Core data layer (session block parsing & merging)
 │   ├── today.ts           # Today's review calculation (due/new/completed)
@@ -295,7 +325,7 @@ src/
 │   ├── useSettings.ts     # Settings single-source-of-truth
 │   ├── usePracticeData.tsx # Practice data fetching
 │   ├── useCurrentCardData.tsx # Active card data with latest-session resolution
-│   ├── useLineByLineReview.ts # LBL interaction logic
+│   ├── useLineByLineReview.ts # Secondary queue execution for LBL
 │   └── ...                # Other UI interaction hooks
 ├── components/overlay/
 │   ├── PracticeOverlay.tsx  # Main review overlay

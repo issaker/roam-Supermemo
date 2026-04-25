@@ -6,8 +6,8 @@
  *           → calculateCombinedCounts → limitRemainingPracticeData → calculateTodayStatus
  */
 import * as dateUtils from '~/utils/date';
-import { Records, RecordUid, Session } from '~/models/session';
-import { CompletionStatus, RenderMode, Today, TodayInitial } from '~/models/practice';
+import { Records, RecordUid, Session, isSessionDue } from '~/models/session';
+import { CompletionStatus, RenderMode, Today, TodayInitial, sortNormalDueCardUids } from '~/models/practice';
 import { generateNewSession } from '~/queries/utils';
 import { DeckConfig } from '~/hooks/useSettings';
 
@@ -98,7 +98,7 @@ export const calculateCompletedTodayCounts = ({ today, tagsList, sessionData }) 
 
       if (isCompletedToday) {
         if (cardData.interaction === 'LBL') {
-          if (cardData.nextDueDate && cardData.nextDueDate <= now) return;
+          if (isSessionDue(cardData, now)) return;
         }
 
         count++;
@@ -184,47 +184,13 @@ export const addNewCards = ({
 };
 
 export const getDueCardUids = (currentTagSessionData: Records, isCramming, shuffleCards = false) => {
-  const results: RecordUid[] = [];
-  if (!Object.keys(currentTagSessionData).length) return results;
+  if (!Object.keys(currentTagSessionData).length) return [];
 
-  const now = new Date();
-  Object.keys(currentTagSessionData).forEach((cardUid) => {
-    const latestSession = currentTagSessionData[cardUid] as Session & { isNew?: boolean };
-    if (!latestSession || latestSession?.isNew) return;
-
-    const nextDueDate = latestSession.nextDueDate;
-
-    if (isCramming || (nextDueDate && nextDueDate <= now)) {
-      results.push(cardUid);
-    }
+  return sortNormalDueCardUids(currentTagSessionData, {
+    isCramming,
+    shuffle: shuffleCards,
+    shuffleFn: fisherYatesShuffle,
   });
-
-  if (shuffleCards) {
-    return fisherYatesShuffle(results);
-  }
-
-  results.sort((a, b) => {
-    const aLatestSession = currentTagSessionData[a] as Session;
-    const bLatestSession = currentTagSessionData[b] as Session;
-
-    const aDueDate = aLatestSession?.nextDueDate || new Date(0);
-    const bDueDate = bLatestSession?.nextDueDate || new Date(0);
-    if (aDueDate.getTime() !== bDueDate.getTime()) {
-      return aDueDate.getTime() - bDueDate.getTime();
-    }
-
-    const aEfactor = aLatestSession?.sm2_eFactor ?? 2.5;
-    const bEfactor = bLatestSession?.sm2_eFactor ?? 2.5;
-    if (aEfactor !== bEfactor) {
-      return aEfactor - bEfactor;
-    }
-
-    const aReps = aLatestSession?.sm2_repetitions ?? 0;
-    const bReps = bLatestSession?.sm2_repetitions ?? 0;
-    return aReps - bReps;
-  });
-
-  return results;
 };
 
 export const addDueCards = ({ today, tagsList, sessionData, isCramming, shuffleCards }) => {

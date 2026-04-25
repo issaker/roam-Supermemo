@@ -1,8 +1,0 @@
-- [x] 切换 Interaction 后卡片位置不变：`onSelectInteraction` 不调用 `fetchPracticeData()`，`currentIndex` 和 `cardQueue` 不变
-- [x] 切换 Algorithm 后卡片位置不变：`onSelectAlgorithm` 不调用 `fetchPracticeData()`，`currentIndex` 和 `cardQueue` 不变
-- [x] 模式切换持久化正确：`updateReviewConfig` 仍被调用，变更持久化到数据页
-- [x] `initialCardUids` useEffect 仅在 UID 集合真正变化时重置 `cardQueue` 和 `currentIndex`
-- [x] `fetchPracticeData()` 触发 today 重新计算但卡片列表不变时，不重置 `cardQueue` 和 `currentIndex`
-- [x] Normal → LBL 切换时 `childSessionData` 正确获取，`useLineByLineReview` 状态正确初始化
-- [x] LBL → Normal 切换时 `childSessionData` 被清空，卡片显示为普通模式
-- [x] lint 和 typecheck 通过

@@ -1,74 +1,18 @@
 /**
- * LBL (Line by Line) Review Hook.
- *
- * Core architecture: child blocks have complete, independent Session Data.
- * - Each child block has its own ((childUid)) entry in the data page
- * - The parent LBL block only stores algorithm, interaction, and nextDueDate
- * - Child blocks can join any deck at any time as independent cards
- *
- * Auto-skip logic:
- * - Due/unread child blocks: require user interaction (Show Answer + grade / Read+Next)
- * - Mastered child blocks: auto-displayed (reduced opacity + green border), no user interaction needed
- * - After reviewing a due child block, auto-advance to the next due child block
- *
- * Reinsertion mechanism:
- * - LBL + Fixed (LblNext): reinserted after Read, continues sequential line-by-line after N cards
- * - LBL + SM2 Forgot: reinserted after Forgot, continues sequential line-by-line after N cards
- * - After reinsertion returns, resume from the next due child block (not from the beginning)
- *
- * Algorithm independence principle:
- * - Each algorithm only operates on its own fields; other algorithm fields are passed through unchanged
- * - sessionOverrides must include algorithm and interaction to ensure card mode is not lost after reinsertion
- *
- * Dual-queue architecture:
- * - Primary queue: cardQueue + currentIndex, navigated via ◀/▶ (←/→)
- * - Secondary queue: childUidsList + lineByLineCurrentChildIndex, navigated via ▲/▼ (↑/↓)
- * - The two queues are fully independent and parallel
- * - ▲/▼ only change the viewing position; grading advances to the next due child block
- * - Card change triggers position reset (needsPositioningRef); algorithm switch does not
- *
- * Interaction mode scope:
- * - Interaction mode (Normal/LBL) is a PARENT-LEVEL property only
- * - Child blocks always have interaction=NORMAL; they never store or read interaction fields
- * - InteractionSelector always displays the parent card's interaction, regardless of current child line
- * - Switching interaction mode operates on the parent card directly
- *
- * SM2 (grading algorithm) ShowAnswer in LBL mode:
- * - SM2 ShowAnswer is determined by hasBlockChildren/hasCloze, same as Normal cards
- * - If a child block has sub-content or cloze: show ShowAnswer button, then grading buttons
- * - If a child block has no sub-content and no cloze: show grading buttons directly
- * - Switching to SM2 keeps the user at the current line (no back-navigation)
- * - IMPORTANT: When adding new Q&A grading algorithms, follow this same ShowAnswer pattern
- *
- * ShowAnswer signal unification:
- * - Footer and CardBlock share the same showAnswers state (PracticeOverlay internal state)
- * - onLineByLineShowAnswer calls setShowAnswers(true), which triggers both Footer button switch
- *   and CardBlock content reveal
- * - lineByLineRevealedCount ONLY controls LineByLineView row rendering range, NOT Footer buttons
- * - This eliminates the dual-signal-source bug where Footer used revealedCount-based logic
- *
- * Line rendering control:
- * - ▲ (up): revealedCount = newIndex + 1 (hide all lines below)
- * - ▼ (down): revealedCount = max(prev, newIndex + 1) (reveal target line)
- * - Invariant: revealedCount >= currentChildIndex + 1 (current line always rendered)
- *
- * Same-day overwrite semantics (baseSessionData):
- * - When a child block is re-scored on the same day (non-Forgot), generatePracticeData
- *   MUST use baseSessionData (the pre-today snapshot) as the calculation base, not the
- *   already-incremented current session data. This prevents data accumulation
- *   (e.g., progressive_repetitions going 4→5→6 instead of staying at 4).
- * - Forgot (grade=0) is exempt: it uses current session data because Forgot is a reset action.
- * - baseSessionData is set by parseLatestSession when the latest session is from today
- *   and a previous non-today session exists.
- * - This mirrors the Normal card flow where baseCardData uses baseSessionData for
- *   same-day re-scoring (see PracticeOverlay.tsx → baseCardData).
- * - effectiveBaseCardData in PracticeOverlay also uses baseSessionData for Footer
- *   interval estimates, ensuring consistent display.
- * - sessionOverrides no longer writes child UIDs (was dead code); child session state
- *   is managed exclusively through setChildSessionData.
+ * LBL review is the secondary queue for a parent card.
+ * Child blocks keep independent session data and algorithms; the parent only
+ * chooses whether this card is rendered as NORMAL or LBL.
  */
 import * as React from 'react';
-import { SchedulingAlgorithm, InteractionStyle, Session, isGradingAlgorithm } from '~/models/session';
+import {
+  SchedulingAlgorithm,
+  InteractionStyle,
+  Session,
+  isGradingAlgorithm,
+  getSessionAlgorithm,
+  deriveParentNextDueDateFromChildSessions,
+} from '~/models/session';
+import { getLblQueueState } from '~/models/practice';
 import { savePracticeData, updateParentNextDueDate } from '~/queries';
 import { generatePracticeData } from '~/practice';
 import { generateNewSession } from '~/queries/utils';
@@ -84,40 +28,11 @@ export const shouldReinsertLblCard = ({
   lblNextReinsertOffset: number;
 }) => lblNextReinsertOffset > 0 && currentChildIndex < totalChildren - 1;
 
-const getDueChildIndices = (
-  childUidsList: string[],
-  childSessionData: Record<string, Session>
-): number[] => {
-  const now = new Date();
-  return childUidsList.reduce((indices, uid, index) => {
-    const session = childSessionData[uid];
-    if (!session || !session.nextDueDate || session.nextDueDate <= now) {
-      indices.push(index);
-    }
-    return indices;
-  }, [] as number[]);
-};
-
-const findNextDueChildIndex = (
-  childUidsList: string[],
-  childSessionData: Record<string, Session>,
-  fromIndex: number
-): number => {
-  const now = new Date();
-  for (let i = fromIndex; i < childUidsList.length; i++) {
-    const uid = childUidsList[i];
-    const session = childSessionData[uid];
-    if (!session || !session.nextDueDate || session.nextDueDate <= now) {
-      return i;
-    }
-  }
-  return childUidsList.length;
-};
-
 interface UseLineByLineReviewInput {
   currentCardRefUid: string | undefined;
   childUidsList: string[];
   isLBLReviewMode: boolean;
+  isChildSessionLoading: boolean;
   dataPageTitle: string;
   lblNextReinsertOffset: number;
   forgotReinsertOffset: number;
@@ -150,6 +65,7 @@ export default function useLineByLineReview({
   currentCardRefUid,
   childUidsList,
   isLBLReviewMode,
+  isChildSessionLoading,
   dataPageTitle,
   lblNextReinsertOffset,
   forgotReinsertOffset,
@@ -173,17 +89,16 @@ export default function useLineByLineReview({
     }
     const childUid = childUidsList[lineByLineCurrentChildIndex];
     const childSession = childSessionData[childUid];
-    return childSession?.algorithm || algorithm;
+    return getSessionAlgorithm(childSession, algorithm);
   }, [isLBLReviewMode, childUidsList, lineByLineCurrentChildIndex, childSessionData, algorithm]);
 
   const currentChildIsLblNext = !isGradingAlgorithm(currentChildAlgorithm);
 
-  const dueChildIndices = React.useMemo(
-    () => getDueChildIndices(childUidsList, childSessionData),
+  const lblQueueState = React.useMemo(
+    () => getLblQueueState(childUidsList, childSessionData, 0),
     [childUidsList, childSessionData]
   );
-
-  const dueChildCount = dueChildIndices.length;
+  const dueChildCount = lblQueueState.dueChildCount;
 
   const needsPositioningRef = React.useRef(true);
 
@@ -197,25 +112,18 @@ export default function useLineByLineReview({
     needsPositioningRef.current = true;
   }, [isLBLReviewMode, currentCardRefUid, childUidsList, currentIndex]);
 
-  // currentCardRefUid is intentionally excluded: positioning must wait for childSessionData
-  // to be fetched for the new card; the needsPositioningRef mechanism (set by the effect
-  // above) ensures this effect only runs after a card change, not on every childSessionData update
+  // Reposition only after the secondary queue for the new parent card has loaded.
   React.useEffect(() => {
     if (!isLBLReviewMode || !childUidsList.length) return;
     if (!needsPositioningRef.current) return;
-
-    if (!Object.keys(childSessionData).length) {
-      setLineByLineCurrentChildIndex(0);
-      setLineByLineRevealedCount(1);
-      return;
-    }
+    if (isChildSessionLoading) return;
 
     needsPositioningRef.current = false;
 
-    const firstDueIndex = findNextDueChildIndex(childUidsList, childSessionData, 0);
+    const firstDueIndex = lblQueueState.nextDueChildIndex;
     setLineByLineCurrentChildIndex(firstDueIndex);
     setLineByLineRevealedCount(firstDueIndex + 1);
-  }, [isLBLReviewMode, childUidsList, childSessionData]);
+  }, [isLBLReviewMode, childUidsList, childSessionData, isChildSessionLoading, lblQueueState]);
 
   const lineByLineIsCardComplete =
     isLBLReviewMode && lineByLineCurrentChildIndex >= childUidsList.length;
@@ -265,23 +173,35 @@ export default function useLineByLineReview({
 
         setSessionOverrides((prev) => ({
           ...prev,
+          [childUid]: {
+            ...existingChildSession,
+            ...childResult,
+            dateCreated: now,
+          },
           [currentCardRefUid]: {
             ...currentCardData,
             algorithm: currentChildAlgorithm,
             interaction,
             dateCreated: now,
-            nextDueDate: childNextDueDate,
+            nextDueDate: deriveParentNextDueDateFromChildSessions(
+              childUidsList,
+              {
+                ...childSessionData,
+                [childUid]: { ...existingChildSession, ...childResult, nextDueDate: childNextDueDate },
+              },
+              now
+            ),
           },
         }));
 
-        const nextDueIndex = findNextDueChildIndex(
+        const nextDueIndex = getLblQueueState(
           childUidsList,
           {
             ...childSessionData,
             [childUid]: { ...existingChildSession, ...childResult, nextDueDate: childNextDueDate },
           },
           lineByLineCurrentChildIndex + 1
-        );
+        ).nextDueChildIndex;
 
         if (
           shouldReinsertLblCard({
@@ -339,12 +259,24 @@ export default function useLineByLineReview({
 
       setSessionOverrides((prev) => ({
         ...prev,
+        [childUid]: {
+          ...existingChildSession,
+          ...childResult,
+          dateCreated: now,
+        },
         [currentCardRefUid]: {
           ...currentCardData,
           algorithm: currentChildAlgorithm,
           interaction,
           dateCreated: now,
-          nextDueDate: childNextDueDate,
+          nextDueDate: deriveParentNextDueDateFromChildSessions(
+            childUidsList,
+            {
+              ...childSessionData,
+              [childUid]: { ...existingChildSession, ...childResult, nextDueDate: childNextDueDate },
+            },
+            now
+          ),
         },
       }));
 
@@ -368,12 +300,13 @@ export default function useLineByLineReview({
         ...childSessionData,
         [childUid]: { ...existingChildSession, ...childResult, nextDueDate: childNextDueDate },
       };
-      const nextDueIndex = findNextDueChildIndex(
+      const nextQueueState = getLblQueueState(
         childUidsList,
         updatedChildSessions,
         lineByLineCurrentChildIndex + 1
       );
-      const isCardFinished = nextDueIndex >= childUidsList.length;
+      const nextDueIndex = nextQueueState.nextDueChildIndex;
+      const isCardFinished = nextQueueState.isComplete;
 
       if (isCardFinished) {
         setCurrentIndex((prev) => prev + 1);
@@ -408,6 +341,7 @@ export default function useLineByLineReview({
       setChildSessionData,
       setCardQueue,
       setShowAnswers,
+      isChildSessionLoading,
     ]
   );
 

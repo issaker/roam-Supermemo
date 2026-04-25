@@ -2,7 +2,13 @@ import * as React from 'react';
 import styled from '@emotion/styled';
 import CardBlock from '~/components/overlay/CardBlock';
 import { colors } from '~/theme';
-import { Session, SchedulingAlgorithm, isGradingAlgorithm } from '~/models/session';
+import {
+  Session,
+  SchedulingAlgorithm,
+  isGradingAlgorithm,
+  isSessionMastered,
+} from '~/models/session';
+import { getLblQueueState } from '~/models/practice';
 import useBlockInfo from '~/hooks/useBlockInfo';
 
 // Stable reference: prevent inline functions from invalidating React.memo
@@ -22,21 +28,6 @@ interface LineByLineViewProps {
   setChildHasBlockChildren: (_hasBlockChildren: boolean) => void;
   setChildHasCloze: (_hasCloze: boolean) => void;
 }
-
-const getDueChildCount = (
-  childUidsList: string[],
-  childSessionData: Record<string, Session>
-): number => {
-  const now = new Date();
-  let count = 0;
-  for (const uid of childUidsList) {
-    const session = childSessionData[uid];
-    if (!session || !session.nextDueDate || session.nextDueDate <= now) {
-      count++;
-    }
-  }
-  return count;
-};
 
 const LineByLineView = ({
   currentCardRefUid,
@@ -62,8 +53,8 @@ const LineByLineView = ({
     setChildHasBlockChildren(currentChildHasBlockChildren);
   }, [currentChildHasBlockChildren, setChildHasBlockChildren]);
 
-  const dueCount = React.useMemo(
-    () => getDueChildCount(childUidsList, childSessionData),
+  const { dueChildCount: dueCount } = React.useMemo(
+    () => getLblQueueState(childUidsList, childSessionData),
     [childUidsList, childSessionData]
   );
 
@@ -86,8 +77,7 @@ const LineByLineView = ({
       {childUidsList.slice(0, lineByLineRevealedCount).map((uid, index) => {
         const isCurrentLine = index === lineByLineCurrentChildIndex;
         const childSession = childSessionData[uid];
-        const isMastered =
-          childSession && childSession.nextDueDate && childSession.nextDueDate > new Date();
+        const isMastered = isSessionMastered(childSession);
         const isCurrentGrading = isCurrentLine && isGradingAlgorithm(currentChildAlgorithm) && !isMastered;
         return (
           <LineByLineItem key={uid} $isCurrent={isCurrentLine} $isMastered={!!isMastered}>

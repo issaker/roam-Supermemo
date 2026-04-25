@@ -66,6 +66,8 @@ import {
   isFixedTimeAlgorithm,
   isGradingAlgorithm,
   isLBLReviewMode,
+  isSessionMastered,
+  getSessionAlgorithm,
   SchedulingAlgorithm,
   FixedTimeUnit,
   InteractionStyle,
@@ -285,6 +287,7 @@ const PracticeOverlay = ({
   const childUidsList = React.useMemo(() => blockInfo.childrenUids || [], [blockInfo.childrenUids]);
 
   const [childSessionData, setChildSessionData] = React.useState<Record<string, Session>>({});
+  const [isChildSessionLoading, setIsChildSessionLoading] = React.useState(false);
   const childSessionDataRef = React.useRef<Record<string, Session>>({});
   React.useEffect(() => {
     childSessionDataRef.current = childSessionData;
@@ -295,16 +298,32 @@ const PracticeOverlay = ({
   React.useEffect(() => {
     if (!isLineByLineActive || !childUidsList.length || !dataPageTitle) {
       setChildSessionData({});
+      setIsChildSessionLoading(false);
       return;
     }
     let cancelled = false;
-    getChildSessionData({ childUids: childUidsList, dataPageTitle, existingPluginPageData: practiceData }).then((data) => {
+    setIsChildSessionLoading(true);
+    getChildSessionData({ childUids: childUidsList, dataPageTitle }).then((data) => {
       if (!cancelled) {
-        setChildSessionData(data as Record<string, Session>);
+        const mergedChildSessions = {
+          ...(data as Record<string, Session>),
+          ...childUidsList.reduce((acc, uid) => {
+            if (sessionOverrides[uid]) {
+              acc[uid] = sessionOverrides[uid];
+            }
+            return acc;
+          }, {} as Record<string, Session>),
+        };
+        setChildSessionData(mergedChildSessions);
+        setIsChildSessionLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setIsChildSessionLoading(false);
       }
     });
     return () => { cancelled = true; };
-  }, [isLineByLineActive, childUidsList, dataPageTitle, currentCardRefUid, currentIndex, practiceData]);
+  }, [isLineByLineActive, childUidsList, dataPageTitle, currentCardRefUid, currentIndex, sessionOverrides]);
 
   const {
     lineByLineRevealedCount,
@@ -321,6 +340,7 @@ const PracticeOverlay = ({
     currentCardRefUid,
     childUidsList,
     isLBLReviewMode: isLineByLineActive,
+    isChildSessionLoading,
     dataPageTitle,
     lblNextReinsertOffset,
     forgotReinsertOffset,
@@ -356,7 +376,7 @@ const PracticeOverlay = ({
       const baseData = (isSameDayReScoring && childSession.baseSessionData)
         ? childSession.baseSessionData
         : childSession;
-      return { ...baseData, algorithm: childSession.algorithm || algorithm };
+      return { ...baseData, algorithm: getSessionAlgorithm(childSession, algorithm) };
     }
     return generateNewSession({ algorithm });
   }, [isLineByLineActive, baseCardData, childUidsList, lineByLineCurrentChildIndex, childSessionData, algorithm]);
@@ -371,7 +391,7 @@ const PracticeOverlay = ({
       } else {
         const currentChildUid = childUidsList[lineByLineCurrentChildIndex];
         const childSession = currentChildUid ? childSessionData[currentChildUid] : undefined;
-        const isChildMastered = childSession && childSession.nextDueDate && childSession.nextDueDate > new Date();
+        const isChildMastered = isSessionMastered(childSession);
 
         if (isChildMastered) {
           setShowAnswers(true);
