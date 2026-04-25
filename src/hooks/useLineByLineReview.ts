@@ -185,13 +185,13 @@ export default function useLineByLineReview({
     if (!isLBLReviewMode || !childUidsList.length) return;
     if (!needsPositioningRef.current) return;
 
-    needsPositioningRef.current = false;
-
     if (!Object.keys(childSessionData).length) {
       setLineByLineCurrentChildIndex(0);
       setLineByLineRevealedCount(1);
       return;
     }
+
+    needsPositioningRef.current = false;
 
     const firstDueIndex = findNextDueChildIndex(childUidsList, childSessionData, 0);
     setLineByLineCurrentChildIndex(firstDueIndex);

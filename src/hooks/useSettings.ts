@@ -57,7 +57,7 @@ export const defaultSettings: Settings = {
   rtlEnabled: false,
   shuffleCards: false,
   forgotReinsertOffset: 3,
-  lblNextReinsertOffset: 3,
+  lblNextReinsertOffset: 0,
   showBreadcrumbs: false,
   showModeBorders: true,
   dailynoteEnabled: true,
