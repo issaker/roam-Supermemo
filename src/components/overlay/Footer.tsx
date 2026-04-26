@@ -8,7 +8,16 @@ import * as dateUtils from '~/utils/date';
 import { generatePracticeData } from '~/practice';
 import Tooltip from '~/components/Tooltip';
 import ButtonTags from '~/components/ButtonTags';
-import { isFixedTimeAlgorithm, isGradingAlgorithm, SchedulingAlgorithm, FixedTimeUnit, InteractionStyle, ALGORITHM_META, INTERACTION_META, Session } from '~/models/session';
+import {
+  isFixedTimeAlgorithm,
+  isGradingAlgorithm,
+  SchedulingAlgorithm,
+  FixedTimeUnit,
+  InteractionStyle,
+  ALGORITHM_META,
+  INTERACTION_META,
+  Session,
+} from '~/models/session';
 import { MainContext } from '~/components/overlay/PracticeOverlay';
 import { usePracticeSession } from '~/contexts/PracticeSessionContext';
 import { getIntentColor, colors } from '~/theme';
@@ -49,8 +58,18 @@ const Footer = ({
   currentCardData,
   onStartCrammingClick,
 }) => {
-  const { fixed_multiplier, fixed_unit, baseCardData, currentChildAlgorithm, isLineByLine, lineByLineIsCardComplete, onLineByLinePrev, onLineByLineNext } = React.useContext(MainContext);
-  const { algorithm: algorithmFromSession, interaction: interactionFromSession } = usePracticeSession();
+  const {
+    fixed_multiplier,
+    fixed_unit,
+    baseCardData,
+    currentChildAlgorithm,
+    isLineByLine,
+    lineByLineIsCardComplete,
+    onLineByLinePrev,
+    onLineByLineNext,
+  } = React.useContext(MainContext);
+  const { algorithm: algorithmFromSession, interaction: interactionFromSession } =
+    usePracticeSession();
 
   const [isIntervalEditorOpen, setIsIntervalEditorOpen] = React.useState(false);
 
@@ -195,7 +214,18 @@ const Footer = ({
         disabled: !isFixedTimeAlgorithm(algorithmFromSession),
       },
     ],
-    [skipFn, onPrevClick, showAnswers, showAnswerFn, intervalPractice, gradeFn, algorithmFromSession, isLineByLine, onLineByLinePrev, onLineByLineNext]
+    [
+      skipFn,
+      onPrevClick,
+      showAnswers,
+      showAnswerFn,
+      intervalPractice,
+      gradeFn,
+      algorithmFromSession,
+      isLineByLine,
+      onLineByLinePrev,
+      onLineByLineNext,
+    ]
   );
   const { handleKeyDown, handleKeyUp } = Blueprint.useHotkeys(hotkeys);
 
@@ -209,7 +239,13 @@ const Footer = ({
       return;
     }
     const grades = [0, 1, 2, 3, 4, 5];
-    const { sm2_interval, sm2_repetitions, sm2_eFactor, progressive_repetitions, progressive_interval } = dataForEstimates;
+    const {
+      sm2_interval,
+      sm2_repetitions,
+      sm2_eFactor,
+      progressive_repetitions,
+      progressive_interval,
+    } = dataForEstimates;
     const estimates = {};
 
     const iterateCount = !isGradingAlgorithm(effectiveAlgorithm) ? 1 : grades.length;
@@ -230,7 +266,15 @@ const Footer = ({
       estimates[grade] = practiceResultData;
     }
     return estimates;
-  }, [baseCardData, currentCardData, fixed_multiplier, fixed_unit, algorithmFromSession, interactionFromSession, currentChildAlgorithm]);
+  }, [
+    baseCardData,
+    currentCardData,
+    fixed_multiplier,
+    fixed_unit,
+    algorithmFromSession,
+    interactionFromSession,
+    currentChildAlgorithm,
+  ]);
 
   return (
     <FooterWrapper
@@ -333,10 +377,11 @@ const LblCompletedControls = ({ onPrevClick, onNextClick, onLineByLinePrev }) =>
         minWidth: '44px',
         minHeight: '44px',
         padding: '0 10px',
-        fontSize: '18px',
+        fontSize: '22px',
         lineHeight: 1,
         touchAction: 'manipulation',
         WebkitTapHighlightColor: 'transparent',
+        border: '1px solid rgba(128, 128, 128, 0.25)',
       }}
     >
       ◀
@@ -355,10 +400,11 @@ const LblCompletedControls = ({ onPrevClick, onNextClick, onLineByLinePrev }) =>
         minWidth: '44px',
         minHeight: '44px',
         padding: '0 10px',
-        fontSize: '18px',
+        fontSize: '22px',
         lineHeight: 1,
         touchAction: 'manipulation',
         WebkitTapHighlightColor: 'transparent',
+        border: '1px solid rgba(128, 128, 128, 0.25)',
       }}
     >
       ▲
@@ -373,11 +419,12 @@ const LblCompletedControls = ({ onPrevClick, onNextClick, onLineByLinePrev }) =>
         minWidth: '44px',
         minHeight: '44px',
         padding: '0 10px',
-        fontSize: '18px',
+        fontSize: '22px',
         lineHeight: 1,
         touchAction: 'manipulation',
         WebkitTapHighlightColor: 'transparent',
         opacity: 0.3,
+        border: '1px solid rgba(128, 128, 128, 0.25)',
       }}
     >
       ▼
@@ -395,10 +442,11 @@ const LblCompletedControls = ({ onPrevClick, onNextClick, onLineByLinePrev }) =>
         minWidth: '44px',
         minHeight: '44px',
         padding: '0 10px',
-        fontSize: '18px',
+        fontSize: '22px',
         lineHeight: 1,
         touchAction: 'manipulation',
         WebkitTapHighlightColor: 'transparent',
+        border: '1px solid rgba(128, 128, 128, 0.25)',
       }}
     >
       ▶
@@ -418,7 +466,8 @@ const GradingControlsWrapper = ({
 }) => {
   const { algorithm, interaction, onSelectAlgorithm, onSelectInteraction } = usePracticeSession();
 
-  const { isLineByLine, onLineByLinePrev, onLineByLineNext, currentChildAlgorithm } = React.useContext(MainContext);
+  const { isLineByLine, onLineByLinePrev, onLineByLineNext, currentChildAlgorithm } =
+    React.useContext(MainContext);
   const effectiveAlgorithm = isLineByLine ? currentChildAlgorithm : algorithm;
   const isAutoAdvanceMode = !isGradingAlgorithm(effectiveAlgorithm);
   const effectiveInteraction = interaction;
@@ -437,10 +486,11 @@ const GradingControlsWrapper = ({
           minWidth: '44px',
           minHeight: '44px',
           padding: '0 10px',
-          fontSize: '18px',
+          fontSize: '22px',
           lineHeight: 1,
           touchAction: 'manipulation',
           WebkitTapHighlightColor: 'transparent',
+          border: '1px solid rgba(128, 128, 128, 0.25)',
         }}
       >
         ◀
@@ -458,10 +508,11 @@ const GradingControlsWrapper = ({
           minWidth: '44px',
           minHeight: '44px',
           padding: '0 10px',
-          fontSize: '18px',
+          fontSize: '22px',
           lineHeight: 1,
           touchAction: 'manipulation',
           WebkitTapHighlightColor: 'transparent',
+          border: '1px solid rgba(128, 128, 128, 0.25)',
         }}
       >
         ▶
@@ -482,10 +533,11 @@ const GradingControlsWrapper = ({
               minWidth: '44px',
               minHeight: '44px',
               padding: '0 10px',
-              fontSize: '18px',
+              fontSize: '22px',
               lineHeight: 1,
               touchAction: 'manipulation',
               WebkitTapHighlightColor: 'transparent',
+              border: '1px solid rgba(128, 128, 128, 0.25)',
             }}
           >
             ▲
@@ -503,10 +555,11 @@ const GradingControlsWrapper = ({
               minWidth: '44px',
               minHeight: '44px',
               padding: '0 10px',
-              fontSize: '18px',
+              fontSize: '22px',
               lineHeight: 1,
               touchAction: 'manipulation',
               WebkitTapHighlightColor: 'transparent',
+              border: '1px solid rgba(128, 128, 128, 0.25)',
             }}
           >
             ▼
@@ -542,15 +595,9 @@ const GradingControlsWrapper = ({
   );
 };
 
-
-
 const FixedIntervalEditor = () => {
-  const {
-    fixed_multiplier,
-    setFixed_multiplier,
-    fixed_unit,
-    setFixed_unit,
-  } = React.useContext(MainContext);
+  const { fixed_multiplier, setFixed_multiplier, fixed_unit, setFixed_unit } =
+    React.useContext(MainContext);
   const handleInputValueChange = (numericValue) => {
     if (isNaN(numericValue)) return;
     setFixed_multiplier(numericValue);
@@ -583,8 +630,10 @@ const FixedIntervalEditor = () => {
         onChange={(e) => setFixed_unit(e.currentTarget.value as FixedTimeUnit)}
         minimal
       >
-        {unitOptions.map(opt => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
+        {unitOptions.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
         ))}
       </Blueprint.HTMLSelect>
     </div>
@@ -604,8 +653,18 @@ const IntervalString = ({ algorithm, fixed_multiplier, fixed_unit, nextDueDate }
   if (algorithm === SchedulingAlgorithm.FIXED_TIME) {
     const unit = fixed_unit || FixedTimeUnit.DAYS;
     const value = fixed_multiplier || 3;
-    const unitLabelMap = { [FixedTimeUnit.DAYS]: 'Days', [FixedTimeUnit.WEEKS]: 'Weeks', [FixedTimeUnit.MONTHS]: 'Months', [FixedTimeUnit.YEARS]: 'Years' };
-    const singularMap = { [FixedTimeUnit.DAYS]: 'Daily', [FixedTimeUnit.WEEKS]: 'Weekly', [FixedTimeUnit.MONTHS]: 'Monthly', [FixedTimeUnit.YEARS]: 'Yearly' };
+    const unitLabelMap = {
+      [FixedTimeUnit.DAYS]: 'Days',
+      [FixedTimeUnit.WEEKS]: 'Weeks',
+      [FixedTimeUnit.MONTHS]: 'Months',
+      [FixedTimeUnit.YEARS]: 'Years',
+    };
+    const singularMap = {
+      [FixedTimeUnit.DAYS]: 'Daily',
+      [FixedTimeUnit.WEEKS]: 'Weekly',
+      [FixedTimeUnit.MONTHS]: 'Monthly',
+      [FixedTimeUnit.YEARS]: 'Yearly',
+    };
 
     if (value === 1) {
       return (
@@ -835,7 +894,12 @@ interface ControlButtonProps extends Omit<Blueprint.IButtonProps, 'intent'> {
   children?: React.ReactNode;
 }
 
-const ControlButton = ({ tooltipText, wrapperClassName = '', intent, ...props }: ControlButtonProps) => {
+const ControlButton = ({
+  tooltipText,
+  wrapperClassName = '',
+  intent,
+  ...props
+}: ControlButtonProps) => {
   const buttonIntent = intent === 'default' || intent === 'none' ? undefined : intent;
 
   return (
@@ -922,7 +986,13 @@ const AlgorithmSelector = ({
             data-testid={`algorithm-option-${option.label.toLowerCase().replace(/\s+/g, '-')}`}
           >
             <span style={{ fontWeight: isActive ? 600 : 400 }}>{option.label}</span>
-            {isActive && <Blueprint.Icon icon="tick" iconSize={12} style={{ marginLeft: 'auto', color: '#0d8050' }} />}
+            {isActive && (
+              <Blueprint.Icon
+                icon="tick"
+                iconSize={12}
+                style={{ marginLeft: 'auto', color: '#0d8050' }}
+              />
+            )}
           </SelectorItemWrapper>
         );
       }}
@@ -951,7 +1021,8 @@ const InteractionSelector = ({
   interaction: InteractionStyle | undefined;
   onSelectInteraction: (_interaction: InteractionStyle) => void;
 }) => {
-  const activeOption = INTERACTION_OPTIONS.find((o) => o.value === interaction) || INTERACTION_OPTIONS[0];
+  const activeOption =
+    INTERACTION_OPTIONS.find((o) => o.value === interaction) || INTERACTION_OPTIONS[0];
 
   return (
     <InteractionSelect
@@ -967,9 +1038,19 @@ const InteractionSelector = ({
             onClick={handleClick}
             data-testid={`interaction-option-${option.label.toLowerCase().replace(/\s+/g, '-')}`}
           >
-            <Blueprint.Icon icon={option.icon} iconSize={14} style={{ opacity: isActive ? 1 : 0.6 }} />
+            <Blueprint.Icon
+              icon={option.icon}
+              iconSize={14}
+              style={{ opacity: isActive ? 1 : 0.6 }}
+            />
             <span style={{ fontWeight: isActive ? 600 : 400 }}>{option.label}</span>
-            {isActive && <Blueprint.Icon icon="tick" iconSize={12} style={{ marginLeft: 'auto', color: '#0d8050' }} />}
+            {isActive && (
+              <Blueprint.Icon
+                icon="tick"
+                iconSize={12}
+                style={{ marginLeft: 'auto', color: '#0d8050' }}
+              />
+            )}
           </SelectorItemWrapper>
         );
       }}
