@@ -280,18 +280,21 @@ Old names (`repetitions`, `interval`, `eFactor`) were ambiguous — they didn't 
 ### Why undo instead of overwrite for same-day re-learning?
 Previously, re-scoring a card on the same day would silently overwrite the existing session block with a 2.5-second toast reminder. This violated user autonomy — the software made the overwrite decision, not the user.
 
-The new design replaces this with an explicit "Undo Today" button:
-- Cards completed today show "Undo Today (SM2/Progressive/FixedTime)" instead of grading buttons
+The new design replaces this with an explicit "Undo Learning" button:
+- Cards with `nextDueDate > now` (learned/mastered) show "Undo Learning (SM2/Progressive/FixedTime)" instead of grading buttons
 - Users must explicitly undo before re-learning, giving them full control
 - `savePracticeData` always creates a new session block (no overwrite logic)
-- `undoTodaySession` deletes same-day session blocks, reverting to the previous day's state
+- `undoLatestSession` deletes the latest session block, reverting to the previous state
+- Learning status is unified: all cards (Normal + LBL children) use `isSessionMastered` (i.e., `nextDueDate > now`) as the judgment standard
 - The `OverwriteReminder` component and `isReScoring`/`isChildReScoring` checks have been removed
 
 ### Why resolveBaseForCalculation?
 Same-day re-scoring requires "rewinding" to the pre-re-score state to prevent interval inflation (e.g., Good→Perfect stacking intervals). Previously, this logic was scattered across 5 locations with subtly different conditions. `resolveBaseForCalculation` unifies this into 3 clear rules: (1) non-same-day → use as-is, (2) same-day Forgot → use as-is (Forgot is the new baseline), (3) same-day non-Forgot → use `baseSessionData` (rewind to Forgot or previous day). This eliminates the `baseSessionDataMap` → `baseCardData` → `effectiveBaseCardData` three-layer chain and reduces code by ~60 lines.
 
 ### Why undo instead of overwrite?
-Same-day re-scoring previously used a "silent overwrite + toast reminder" pattern. This had three problems: (1) the software decided to overwrite, not the user, (2) the 2.5-second toast was easy to miss, (3) the overwrite logic (same-day dedup + Forgot preservation + field backfill) was the most complex part of `savePracticeData`. The undo pattern simplifies all three: the user explicitly chooses to undo, the "Undo Today" button is always visible, and `savePracticeData` simply always creates a new block.
+Same-day re-scoring previously used a "silent overwrite + toast reminder" pattern. This had three problems: (1) the software decided to overwrite, not the user, (2) the 2.5-second toast was easy to miss, (3) the overwrite logic (same-day dedup + Forgot preservation + field backfill) was the most complex part of `savePracticeData`. The undo pattern simplifies all three: the user explicitly chooses to undo, the "Undo Learning" button is always visible, and `savePracticeData` simply always creates a new block.
+
+Additionally, the learning status judgment is now unified: `isLearned` uses `isSessionMastered` (nextDueDate > now) instead of `isSameDay(dateCreated) + sm2_grade !== 0`. This eliminates the LBL special-case in `calculateCompletedTodayCounts` and correctly handles Forgot cards (which have nextDueDate <= now and are therefore not "learned").
 
 ### ⚠️ Build Pitfall: Do NOT remove `library.export: 'default'`
 Roam loads plugins via `<script>` tag. The UMD wrapper needs proper default export handling. Removing this causes `Uncaught SyntaxError: Unexpected token 'export'` and silent plugin failure.

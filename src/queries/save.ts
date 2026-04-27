@@ -143,7 +143,7 @@ const upsertLatestSessionField = async ({
  * are written to the session block.
  *
  * Always creates a new session block for each practice result.
- * The undo mechanism (undoTodaySession) handles cleanup of same-day
+ * The undo mechanism (undoLatestSession) handles cleanup of the latest
  * records when the user chooses to undo and re-learn.
  *
  * Field integrity protection:

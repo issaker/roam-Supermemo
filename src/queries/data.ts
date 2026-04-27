@@ -693,7 +693,7 @@ const limitRemainingPracticeData = ({
   }
 };
 
-export const undoTodaySession = async ({
+export const undoLatestSession = async ({
   refUid,
   dataPageTitle,
 }: {
@@ -717,17 +717,16 @@ export const undoTodaySession = async ({
   );
 
   const children = existingCardChildren?.[0]?.[0]?.children || [];
-  const todayRoamDateString = stringUtils.dateToRoamDateString(new Date());
 
-  const todayBlocks = children.filter((c) => {
-    if (!c?.string) return false;
-    const dateStr = stringUtils.getStringBetween(c.string, '[[', ']]');
-    return dateStr === todayRoamDateString;
-  });
+  const dateBlocks = children
+    .filter((c) => {
+      if (!c?.string) return false;
+      const dateStr = stringUtils.getStringBetween(c.string, '[[', ']]');
+      return !!stringUtils.parseRoamDateString(dateStr);
+    })
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
-  for (const block of todayBlocks) {
-    if (block?.uid) {
-      await window.roamAlphaAPI.deleteBlock({ block: { uid: block.uid } });
-    }
+  if (dateBlocks.length > 0 && dateBlocks[0].uid) {
+    await window.roamAlphaAPI.deleteBlock({ block: { uid: dateBlocks[0].uid } });
   }
 };

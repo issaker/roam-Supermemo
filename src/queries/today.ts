@@ -5,8 +5,7 @@
  * Pipeline: initializeToday → calculateCompletedTodayCounts → addNewCards → addDueCards
  *           → calculateCombinedCounts → limitRemainingPracticeData → calculateTodayStatus
  */
-import * as dateUtils from '~/utils/date';
-import { Records, RecordUid, Session, isSessionDue } from '~/models/session';
+import { Records, RecordUid, Session, isSessionMastered } from '~/models/session';
 import { CompletionStatus, RenderMode, Today, TodayInitial, sortNormalDueCardUids } from '~/models/practice';
 import { generateNewSession } from '~/queries/utils';
 import { DeckConfig } from '~/hooks/useSettings';
@@ -85,7 +84,6 @@ export const calculateTodayStatus = ({ today, tagsList }) => {
 export const calculateCompletedTodayCounts = ({ today, tagsList, sessionData }) => {
   for (const tag of tagsList) {
     let count = 0;
-    // Create Date outside loop: avoid repeated object creation per iteration
     const now = new Date();
     const completedUids: RecordUid[] = [];
 
@@ -93,14 +91,7 @@ export const calculateCompletedTodayCounts = ({ today, tagsList, sessionData }) 
     Object.keys(currentTagSessionData).forEach((cardUid) => {
       const cardData = currentTagSessionData[cardUid];
       if (cardData?.isNew) return;
-      const isCompletedToday =
-        cardData && dateUtils.isSameDay(cardData.dateCreated, now);
-
-      if (isCompletedToday) {
-        if (cardData.interaction === 'LBL') {
-          if (isSessionDue(cardData, now)) return;
-        }
-
+      if (isSessionMastered(cardData, now)) {
         count++;
         completedUids.push(cardUid);
       }

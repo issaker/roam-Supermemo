@@ -57,8 +57,8 @@ const Footer = ({
   onCloseCallback,
   currentCardData,
   onStartCrammingClick,
-  isCompletedToday,
-  onUndoTodayLearning,
+  isLearned,
+  onUndoLearning,
 }: {
   setShowAnswers: (_show: boolean) => void;
   showAnswers: boolean;
@@ -71,8 +71,8 @@ const Footer = ({
   onCloseCallback: () => void;
   currentCardData: any;
   onStartCrammingClick: () => void;
-  isCompletedToday: boolean;
-  onUndoTodayLearning: () => void;
+  isLearned: boolean;
+  onUndoLearning: () => void;
 }) => {
   const {
     fixed_multiplier,
@@ -313,9 +313,9 @@ const Footer = ({
             onNextClick={skipFn}
             onLineByLinePrev={onLineByLinePrev}
           />
-        ) : isCompletedToday ? (
+        ) : isLearned ? (
           <CompletedTodayControls
-            onUndoTodayLearning={onUndoTodayLearning}
+            onUndoLearning={onUndoLearning}
             algorithm={algorithmFromSession}
           />
         ) : !showAnswers ? (
@@ -390,22 +390,22 @@ const ALGORITHM_DISPLAY_NAME: Record<SchedulingAlgorithm, string> = {
 };
 
 const CompletedTodayControls = ({
-  onUndoTodayLearning,
+  onUndoLearning,
   algorithm,
 }: {
-  onUndoTodayLearning: () => void;
+  onUndoLearning: () => void;
   algorithm: SchedulingAlgorithm | undefined;
 }) => {
   const displayName = algorithm ? ALGORITHM_DISPLAY_NAME[algorithm] : '';
   return (
-    <Tooltip content="Reset today's learning record and re-learn this card" placement="top">
+    <Tooltip content="Reset this card's learning record and re-learn" placement="top">
       <Blueprint.Button
         className="text-base font-medium py-1"
         intent="danger"
-        onClick={onUndoTodayLearning}
+        onClick={onUndoLearning}
         outlined
       >
-        Undo Today ({displayName})
+        Undo Learning ({displayName})
       </Blueprint.Button>
     </Tooltip>
   );

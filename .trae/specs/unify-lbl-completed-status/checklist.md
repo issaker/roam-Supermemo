@@ -1,0 +1,15 @@
+- [x] `isLearned` 基于 `isSessionMastered(session, now)` 判断（替代原 `isCompletedToday` 基于 `isSameDay + sm2_grade !== 0`）
+- [x] Normal 模式下 `isLearned` 正确判断卡片学习状态
+- [x] LBL 子行模式下 `isLearned` 正确判断子行学习状态
+- [x] LBL 子行未评分但 `nextDueDate > now` 时，`isLearned = true`，显示 "Undo Learning" 按钮
+- [x] SM2 Forgot 后 `nextDueDate <= now` 时，`isLearned = false`，显示评分按钮
+- [x] `CompletedTodayControls` 按钮文案为 "Undo Learning (SM2/Progressive/FixedTime)"
+- [x] Tooltip 提示为 "Reset this card's learning record and re-learn"
+- [x] `calculateCompletedTodayCounts` 统一使用 `isSessionMastered` 判断，移除 LBL 特殊分支
+- [x] `onUndoTodayLearning` 重命名为 `onUndoLearning`
+- [x] `undoTodaySession` 重命名为 `undoLatestSession`，支持删除最新一条 session block（不限于同日）
+- [x] 撤销非同日学习记录后，卡片状态正确回退
+- [x] TypeScript 编译通过
+- [x] ESLint 检查通过
+- [x] 所有现有测试通过
+- [x] README.md 已更新

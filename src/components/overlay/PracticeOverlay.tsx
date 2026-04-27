@@ -31,7 +31,6 @@ import LineByLineView from '~/components/overlay/LineByLineView';
 import SettingsDialog from '~/components/overlay/SettingsDialog';
 import {
   Session,
-  NewSession,
   isFixedTimeAlgorithm,
   isGradingAlgorithm,
   isLBLReviewMode,
@@ -50,7 +49,7 @@ import {
   generateNewSession,
   updateReviewConfig,
   getChildSessionData,
-  undoTodaySession,
+  undoLatestSession,
 } from '~/queries';
 
 import { generatePracticeData } from '~/practice';
@@ -361,19 +360,19 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
     childUidsList,
   });
 
-  const isCompletedToday = React.useMemo(() => {
+  // isLearned: whether the current card (or LBL child) has been learned/mastered.
+  // Based on `isSessionMastered` (i.e., `nextDueDate > now`), which unifies the
+  // learning status judgment for both Normal and LBL child cards.
+  // Replaces the old `isSameDay(dateCreated) && sm2_grade !== 0` check.
+  const isLearned = React.useMemo(() => {
     if (isDone) return false;
     const now = new Date();
     if (isLineByLineActive && !lineByLineIsCardComplete) {
       const currentChildUid = childUidsList[lineByLineCurrentChildIndex];
       const childSession = currentChildUid ? childSessionData[currentChildUid] : undefined;
-      if (!childSession?.dateCreated) return false;
-      return dateUtils.isSameDay(childSession.dateCreated, now) && childSession.sm2_grade !== 0;
+      return isSessionMastered(childSession, now);
     }
-    if (!currentCardData?.dateCreated) return false;
-    const isNewCard = currentCardRefUid && (practiceData[currentCardRefUid] as NewSession)?.isNew;
-    if (isNewCard) return false;
-    return dateUtils.isSameDay(currentCardData.dateCreated, now) && currentCardData.sm2_grade !== 0;
+    return isSessionMastered(currentCardData, now);
   }, [
     isDone,
     isLineByLineActive,
@@ -382,8 +381,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
     lineByLineCurrentChildIndex,
     childSessionData,
     currentCardData,
-    currentCardRefUid,
-    practiceData,
   ]);
 
   // LBL mode: resolve base from child session; Normal mode: use parent's baseCardData.
@@ -590,7 +587,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
     setCurrentIndex(0);
   };
 
-  const onUndoTodayLearning = React.useCallback(async () => {
+  const onUndoLearning = React.useCallback(async () => {
     if (!currentCardRefUid) return;
     const undoRefUid =
       isLineByLineActive && !lineByLineIsCardComplete
@@ -598,7 +595,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
         : currentCardRefUid;
     if (!undoRefUid) return;
     try {
-      await undoTodaySession({ refUid: undoRefUid, dataPageTitle });
+      await undoLatestSession({ refUid: undoRefUid, dataPageTitle });
     } catch (err) {
       console.error('Memo: Failed to undo today session', err);
     }
@@ -996,8 +993,8 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
             onCloseCallback={onCloseCallback}
             currentCardData={currentCardData}
             onStartCrammingClick={onStartCrammingClick}
-            isCompletedToday={isCompletedToday}
-            onUndoTodayLearning={onUndoTodayLearning}
+            isLearned={isLearned}
+            onUndoLearning={onUndoLearning}
           />
         </Dialog>
 
