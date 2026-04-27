@@ -35,12 +35,7 @@
 import { getStringBetween, parseConfigString, parseRoamDateString } from '~/utils/string';
 import * as stringUtils from '~/utils/string';
 import * as dateUtils from '~/utils/date';
-import {
-  Records,
-  RecordUid,
-  resolveReviewConfig,
-  CompleteRecords,
-} from '~/models/session';
+import { Records, RecordUid, resolveReviewConfig, CompleteRecords } from '~/models/session';
 import { Today } from '~/models/practice';
 import {
   addDueCards,
@@ -50,7 +45,13 @@ import {
   calculateTodayStatus,
   initializeToday,
 } from '~/queries/today';
-import { generateNewSession, getChildBlocksOnPage, getDailyNoteBlockUids } from './utils';
+import {
+  generateNewSession,
+  getChildBlocksOnPage,
+  getDailyNoteBlockUids,
+  getOrCreateBlockOnPage,
+  getOrCreateChildBlock,
+} from './utils';
 import { DAILYNOTE_DECK_KEY } from '~/constants';
 import { DeckConfig } from '~/hooks/useSettings';
 
@@ -179,10 +180,7 @@ const mergeSessionSnapshot = (
     }
   }
 
-  const config = resolveReviewConfig(
-    nextSnapshot.algorithm,
-    nextSnapshot.interaction
-  );
+  const config = resolveReviewConfig(nextSnapshot.algorithm, nextSnapshot.interaction);
   nextSnapshot.algorithm = config.algorithm;
   nextSnapshot.interaction = config.interaction;
 
@@ -469,10 +467,12 @@ export const getChildSessionData = async ({
   if (!childUids.length) return {};
 
   // Prefer cached data to avoid full data page reload
-  const pluginPageData = existingPluginPageData || (await getPluginPageData({
-    dataPageTitle,
-    limitToLatest: true,
-  })) as Records;
+  const pluginPageData =
+    existingPluginPageData ||
+    ((await getPluginPageData({
+      dataPageTitle,
+      limitToLatest: true,
+    })) as Records);
 
   const result: Records = {};
 
@@ -517,18 +517,9 @@ const limitRemainingPracticeData = ({
     }
   }
 
-  const totalCompleted = tagsList.reduce(
-    (sum, tag) => sum + today.tags[tag].completed,
-    0
-  );
-  const totalDueAvailable = tagsList.reduce(
-    (sum, tag) => sum + today.tags[tag].dueUids.length,
-    0
-  );
-  const totalNewAvailable = tagsList.reduce(
-    (sum, tag) => sum + today.tags[tag].newUids.length,
-    0
-  );
+  const totalCompleted = tagsList.reduce((sum, tag) => sum + today.tags[tag].completed, 0);
+  const totalDueAvailable = tagsList.reduce((sum, tag) => sum + today.tags[tag].dueUids.length, 0);
+  const totalNewAvailable = tagsList.reduce((sum, tag) => sum + today.tags[tag].newUids.length, 0);
   const totalRemaining = totalDueAvailable + totalNewAvailable;
 
   if (!dailyLimit || !totalRemaining || isCramming) {
@@ -699,5 +690,44 @@ const limitRemainingPracticeData = ({
       due: selectedCards[tag].dueUids.length,
       new: selectedCards[tag].newUids.length,
     };
+  }
+};
+
+export const undoTodaySession = async ({
+  refUid,
+  dataPageTitle,
+}: {
+  refUid: string;
+  dataPageTitle: string;
+}): Promise<void> => {
+  const dataBlockUid = await getOrCreateBlockOnPage(dataPageTitle, 'data', -1, {
+    open: false,
+    heading: 3,
+  });
+
+  const cardDataBlockUid = await getOrCreateChildBlock(dataBlockUid, `((${refUid}))`, 0, {
+    open: false,
+  });
+
+  const existingCardChildren = await window.roamAlphaAPI.q(
+    `[:find (pull ?card [:block/children :block/uid {:block/children [:block/uid :block/string :block/order {:block/children [:block/uid :block/string :block/order]}]}])
+         :in $ ?cardUid
+         :where [?card :block/uid ?cardUid]]`,
+    cardDataBlockUid
+  );
+
+  const children = existingCardChildren?.[0]?.[0]?.children || [];
+  const todayRoamDateString = stringUtils.dateToRoamDateString(new Date());
+
+  const todayBlocks = children.filter((c) => {
+    if (!c?.string) return false;
+    const dateStr = stringUtils.getStringBetween(c.string, '[[', ']]');
+    return dateStr === todayRoamDateString;
+  });
+
+  for (const block of todayBlocks) {
+    if (block?.uid) {
+      await window.roamAlphaAPI.deleteBlock({ block: { uid: block.uid } });
+    }
   }
 };

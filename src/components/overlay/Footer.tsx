@@ -57,6 +57,22 @@ const Footer = ({
   onCloseCallback,
   currentCardData,
   onStartCrammingClick,
+  isCompletedToday,
+  onUndoTodayLearning,
+}: {
+  setShowAnswers: (_show: boolean) => void;
+  showAnswers: boolean;
+  refUid: string | undefined;
+  onPracticeClick: (_props: { sm2_grade?: number; refUid?: string }) => void;
+  onSkipClick: () => void;
+  onPrevClick: () => void;
+  isDone: boolean;
+  hasCards: boolean;
+  onCloseCallback: () => void;
+  currentCardData: any;
+  onStartCrammingClick: () => void;
+  isCompletedToday: boolean;
+  onUndoTodayLearning: () => void;
 }) => {
   const {
     fixed_multiplier,
@@ -297,6 +313,11 @@ const Footer = ({
             onNextClick={skipFn}
             onLineByLinePrev={onLineByLinePrev}
           />
+        ) : isCompletedToday ? (
+          <CompletedTodayControls
+            onUndoTodayLearning={onUndoTodayLearning}
+            algorithm={algorithmFromSession}
+          />
         ) : !showAnswers ? (
           <AnswerHiddenControls
             activateButtonFn={activateButtonFn}
@@ -359,6 +380,34 @@ const FinishedControls = ({ onStartCrammingClick, onCloseCallback }) => {
         Close
       </Blueprint.Button>
     </>
+  );
+};
+
+const ALGORITHM_DISPLAY_NAME: Record<SchedulingAlgorithm, string> = {
+  [SchedulingAlgorithm.SM2]: 'SM2',
+  [SchedulingAlgorithm.PROGRESSIVE]: 'Progressive',
+  [SchedulingAlgorithm.FIXED_TIME]: 'FixedTime',
+};
+
+const CompletedTodayControls = ({
+  onUndoTodayLearning,
+  algorithm,
+}: {
+  onUndoTodayLearning: () => void;
+  algorithm: SchedulingAlgorithm | undefined;
+}) => {
+  const displayName = algorithm ? ALGORITHM_DISPLAY_NAME[algorithm] : '';
+  return (
+    <Tooltip content="Reset today's learning record and re-learn this card" placement="top">
+      <Blueprint.Button
+        className="text-base font-medium py-1"
+        intent="danger"
+        onClick={onUndoTodayLearning}
+        outlined
+      >
+        Undo Today ({displayName})
+      </Blueprint.Button>
+    </Tooltip>
   );
 };
 

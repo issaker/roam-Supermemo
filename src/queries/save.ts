@@ -142,21 +142,14 @@ const upsertLatestSessionField = async ({
  * All fields (including algorithm, interaction, nextDueDate)
  * are written to the session block.
  *
- * Same-day session block deduplication:
- * If a session block already exists for today, update its title (emoji may change) and
- * delete old child fields before rewriting, rather than creating a new date block.
- * This prevents duplicate session blocks for the same card on the same day.
- *
- * Forgot record preservation:
- * If the existing same-day session is a Forgot (sm2_grade === 0) and the new grade is
- * non-Forgot, create a new session block instead of overwriting. This preserves the
- * Forgot history so the SM2 algorithm can account for it in subsequent calculations.
- * The Forgot session block serves as baseSessionData for same-day re-scoring.
+ * Always creates a new session block for each practice result.
+ * The undo mechanism (undoTodaySession) handles cleanup of same-day
+ * records when the user chooses to undo and re-learn.
  *
  * Field integrity protection:
- * Before rewriting, verify that the write data covers all existing fields in SESSION_SNAPSHOT_KEYS.
- * Missing fields are backfilled from the existing child blocks of the same-day session block,
- * preventing the "delete all → rewrite" strategy from losing fields.
+ * Before creating, verify that the write data covers all fields in SESSION_SNAPSHOT_KEYS.
+ * Missing fields are backfilled from the latest existing session block,
+ * preventing data loss when switching algorithms or after undo operations.
  */
 export const savePracticeData = async ({ refUid, dataPageTitle, dateCreated, ...data }) => {
   await getOrCreatePage(dataPageTitle);
@@ -182,43 +175,19 @@ export const savePracticeData = async ({ refUid, dataPageTitle, dateCreated, ...
   );
 
   const children = existingCardChildren?.[0]?.[0]?.children || [];
-  const todayBlocks = children
+  const dateBlocks = children
     .filter((c) => {
       if (!c?.string) return false;
       const dateStr = stringUtils.getStringBetween(c.string, '[[', ']]');
-      return dateStr === dateCreatedRoamDateString;
+      return !!stringUtils.parseRoamDateString(dateStr);
     })
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  const todayBlock = todayBlocks[0];
 
-  let existingGrade: number | undefined;
-  if (todayBlock?.children) {
-    for (const child of todayBlock.children) {
-      if (child?.string) {
-        const [key, value] = stringUtils.parseConfigString(child.string);
-        if (key === 'sm2_grade') {
-          existingGrade = typeof value === 'number' ? value : Number(value);
-          break;
-        }
-      }
-    }
-  }
-
-  const isExistingForgot = existingGrade === 0;
-  const isNewGradeNonForgot = data.sm2_grade !== undefined && data.sm2_grade !== 0;
-  const shouldPreserveForgot = isExistingForgot && isNewGradeNonForgot;
-
-  let sessionBlockUid: string;
-
-  if (todayBlock && !shouldPreserveForgot) {
-    sessionBlockUid = todayBlock.uid;
-    await window.roamAlphaAPI.updateBlock({
-      block: { uid: todayBlock.uid, string: sessionBlockTitle },
-    });
-
-    if (todayBlock.children) {
+  if (dateBlocks.length > 0) {
+    const latestBlock = dateBlocks[0];
+    if (latestBlock.children) {
       const existingFields: Record<string, any> = {};
-      for (const child of todayBlock.children) {
+      for (const child of latestBlock.children) {
         if (child?.string) {
           const [key, value] = stringUtils.parseConfigString(child.string);
           if (key && SESSION_SNAPSHOT_KEYS.includes(key as any) && data[key] === undefined) {
@@ -236,18 +205,12 @@ export const savePracticeData = async ({ refUid, dataPageTitle, dateCreated, ...
           data[key] = value;
         }
       }
-
-      await Promise.all(
-        todayBlock.children
-          .filter((child) => child?.uid)
-          .map((child) => window.roamAlphaAPI.deleteBlock({ block: { uid: child.uid } }))
-      );
     }
-  } else {
-    sessionBlockUid = await createChildBlock(cardDataBlockUid, sessionBlockTitle, 0, {
-      open: false,
-    });
   }
+
+  const sessionBlockUid = await createChildBlock(cardDataBlockUid, sessionBlockTitle, 0, {
+    open: false,
+  });
 
   const nextDueDate =
     data.nextDueDate !== undefined

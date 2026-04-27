@@ -46,7 +46,12 @@ import useLineByLineReview, { shouldReinsertLblCard } from '~/hooks/useLineByLin
 export { shouldReinsertLblCard };
 import useAutoCollapseBlocks from '~/hooks/useAutoCollapseBlocks';
 import useCurrentCardData from '~/hooks/useCurrentCardData';
-import { generateNewSession, updateReviewConfig, getChildSessionData } from '~/queries';
+import {
+  generateNewSession,
+  updateReviewConfig,
+  getChildSessionData,
+  undoTodaySession,
+} from '~/queries';
 
 import { generatePracticeData } from '~/practice';
 import { CompletionStatus, RenderMode } from '~/models/practice';
@@ -238,14 +243,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
   const [showAnswers, setShowAnswers] = React.useState(false);
   const [hasCloze, setHasCloze] = React.useState(true);
   const [showSettings, setShowSettings] = React.useState(false);
-  const [showOverwriteReminder, setShowOverwriteReminder] = React.useState(false);
-
-  React.useEffect(() => {
-    if (showOverwriteReminder) {
-      const timer = setTimeout(() => setShowOverwriteReminder(false), 2500);
-      return () => clearTimeout(timer);
-    }
-  }, [showOverwriteReminder]);
 
   // Reset hasCloze on card change to prevent stale state from previous card
   React.useEffect(() => {
@@ -364,6 +361,31 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
     childUidsList,
   });
 
+  const isCompletedToday = React.useMemo(() => {
+    if (isDone) return false;
+    const now = new Date();
+    if (isLineByLineActive && !lineByLineIsCardComplete) {
+      const currentChildUid = childUidsList[lineByLineCurrentChildIndex];
+      const childSession = currentChildUid ? childSessionData[currentChildUid] : undefined;
+      if (!childSession?.dateCreated) return false;
+      return dateUtils.isSameDay(childSession.dateCreated, now) && childSession.sm2_grade !== 0;
+    }
+    if (!currentCardData?.dateCreated) return false;
+    const isNewCard = currentCardRefUid && (practiceData[currentCardRefUid] as NewSession)?.isNew;
+    if (isNewCard) return false;
+    return dateUtils.isSameDay(currentCardData.dateCreated, now) && currentCardData.sm2_grade !== 0;
+  }, [
+    isDone,
+    isLineByLineActive,
+    lineByLineIsCardComplete,
+    childUidsList,
+    lineByLineCurrentChildIndex,
+    childSessionData,
+    currentCardData,
+    currentCardRefUid,
+    practiceData,
+  ]);
+
   // LBL mode: resolve base from child session; Normal mode: use parent's baseCardData.
   // Algorithm is overridden to the child's actual algorithm (may differ from parent).
   const effectiveBaseCardData = React.useMemo(() => {
@@ -478,18 +500,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
       if (isDone) return;
 
       if (isLineByLineActive && !lineByLineIsCardComplete) {
-        const currentChildUid = childUidsList[lineByLineCurrentChildIndex];
-        const childSession = currentChildUid
-          ? childSessionDataRef.current[currentChildUid]
-          : undefined;
-        const isChildReScoring =
-          !!childSession &&
-          childSession.dateCreated &&
-          dateUtils.isSameDay(childSession.dateCreated, new Date()) &&
-          childSession.sm2_grade !== 0;
-        if (isChildReScoring) {
-          setShowOverwriteReminder(true);
-        }
         onLineByLineGrade(gradeData.sm2_grade);
         return;
       }
@@ -508,16 +518,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
         algorithm,
         interaction,
       };
-
-      const isNewCard = currentCardRefUid && (practiceData[currentCardRefUid] as NewSession)?.isNew;
-      const isReScoring =
-        !isNewCard &&
-        currentCardData?.dateCreated &&
-        dateUtils.isSameDay(currentCardData.dateCreated, new Date()) &&
-        currentCardData.sm2_grade !== 0;
-      if (isReScoring) {
-        setShowOverwriteReminder(true);
-      }
 
       if (!isCramming && currentCardRefUid) {
         const now = new Date();
@@ -589,6 +589,43 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
     setIsCramming(true);
     setCurrentIndex(0);
   };
+
+  const onUndoTodayLearning = React.useCallback(async () => {
+    if (!currentCardRefUid) return;
+    const undoRefUid =
+      isLineByLineActive && !lineByLineIsCardComplete
+        ? childUidsList[lineByLineCurrentChildIndex]
+        : currentCardRefUid;
+    if (!undoRefUid) return;
+    try {
+      await undoTodaySession({ refUid: undoRefUid, dataPageTitle });
+    } catch (err) {
+      console.error('Memo: Failed to undo today session', err);
+    }
+    setSessionOverrides((prev) => {
+      const next = { ...prev };
+      delete next[undoRefUid];
+      if (undoRefUid !== currentCardRefUid) {
+        delete next[currentCardRefUid];
+      }
+      return next;
+    });
+    if (isLineByLineActive && !lineByLineIsCardComplete) {
+      setChildSessionData((prev) => {
+        const next = { ...prev };
+        delete next[undoRefUid];
+        return next;
+      });
+    }
+    setShowAnswers(false);
+  }, [
+    currentCardRefUid,
+    dataPageTitle,
+    isLineByLineActive,
+    lineByLineIsCardComplete,
+    childUidsList,
+    lineByLineCurrentChildIndex,
+  ]);
 
   const toggleBreadcrumbs = React.useCallback(() => {
     updateSetting('showBreadcrumbs', !showBreadcrumbs);
@@ -941,9 +978,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
               </div>
             )}
           </DialogBody>
-          {showOverwriteReminder && (
-            <OverwriteReminder>今日已学习，此次学习将覆盖今日数据</OverwriteReminder>
-          )}
           {/* LBL showAnswers unified: internal showAnswers state controls both CardBlock and Footer.
             lineByLineRevealedCount only controls LineByLineView row rendering range. */}
           <Footer
@@ -962,6 +996,8 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
             onCloseCallback={onCloseCallback}
             currentCardData={currentCardData}
             onStartCrammingClick={onStartCrammingClick}
+            isCompletedToday={isCompletedToday}
+            onUndoTodayLearning={onUndoTodayLearning}
           />
         </Dialog>
 
@@ -1135,36 +1171,6 @@ const DoneIllustrationSpark = styled.div<{
     50% {
       transform: translateY(-6px);
       opacity: 1;
-    }
-  }
-`;
-
-const OverwriteReminder = styled.div`
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(0, 0, 0, 0.75);
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-size: 14px;
-  z-index: 100;
-  animation: fadeInOut 2.5s ease-in-out;
-  pointer-events: none;
-
-  @keyframes fadeInOut {
-    0% {
-      opacity: 0;
-    }
-    15% {
-      opacity: 1;
-    }
-    75% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
     }
   }
 `;
