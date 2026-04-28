@@ -3,17 +3,12 @@
  *
  * Provides card data for the currently displayed card in the practice overlay.
  *
- * Data source:
- *   sessions prop — Latest effective session (wrapped in single-element array for API compatibility).
- *   algorithm, interaction, and other meta fields are already merged into each
- *   Session record during the initial data load (see data.ts → mapPluginPageData),
- *   so no separate polling or meta query is needed.
- *
- * Key outputs:
- * - currentCardData: Latest session data for the current card (Session type)
- * - cardMeta: Card-level metadata (algorithm, interaction, lineByLine*) derived from latestSession
- * - algorithm / interaction: Resolved from cardMeta as the SINGLE SOURCE OF TRUTH
- * - applyOptimisticCardMeta: Instant UI update when user switches review config
+ * Architecture:
+ * - `currentCardData` is a direct alias of `latestSession` (not state) so
+ *   undo / fetchPracticeData updates are reflected immediately.
+ * - `cardMeta` is derived from `latestSession` with an optional uid-keyed
+ *   optimistic overlay.  The uid guard prevents the previous card's optimistic
+ *   algorithm / interaction from leaking into the next card on the first render.
  */
 import * as React from 'react';
 import {
@@ -32,8 +27,58 @@ export default function useCurrentCardData({
   sessions: Session[];
 }) {
   const latestSession = sessions[sessions.length - 1] as Session | undefined;
-  const [currentCardData, setCurrentCardData] = React.useState<Session | undefined>(latestSession);
-  const [cardMeta, setCardMeta] = React.useState<CardMeta | undefined>(undefined);
+
+  // Direct alias — not state.  Always reflects the freshest session data.
+  const currentCardData = latestSession;
+
+  // Optimistic meta keyed by card uid so the synchronous uid guard below
+  // ignores stale overrides from the previous card on the same render.
+  const [optimisticCardMeta, setOptimisticCardMeta] = React.useState<{
+    meta: CardMeta;
+    uid: string;
+  } | null>(null);
+
+  // Clear optimistic meta when the card changes (runs after paint — the
+  // synchronous uid guard in effectiveOptimisticMeta handles first-render
+  // correctness).
+  React.useEffect(() => {
+    if (optimisticCardMeta && optimisticCardMeta.uid !== currentCardRefUid) {
+      setOptimisticCardMeta(null);
+    }
+  }, [currentCardRefUid, optimisticCardMeta]);
+
+  const derivedCardMeta = React.useMemo<CardMeta | undefined>(() => {
+    if (!latestSession) return undefined;
+    return {
+      algorithm: latestSession.algorithm ?? DEFAULT_REVIEW_CONFIG.algorithm,
+      interaction: latestSession.interaction ?? DEFAULT_REVIEW_CONFIG.interaction,
+      nextDueDate: latestSession.nextDueDate,
+    };
+  }, [latestSession]);
+
+  // Only apply the optimistic overlay when it belongs to the current card.
+  const effectiveOptimisticMeta =
+    optimisticCardMeta && optimisticCardMeta.uid === currentCardRefUid
+      ? optimisticCardMeta.meta
+      : undefined;
+
+  const cardMeta = React.useMemo<CardMeta | undefined>(() => {
+    if (!derivedCardMeta && !effectiveOptimisticMeta) return undefined;
+    return {
+      ...(derivedCardMeta || {}),
+      ...(effectiveOptimisticMeta || {}),
+      algorithm:
+        effectiveOptimisticMeta?.algorithm ??
+        derivedCardMeta?.algorithm ??
+        DEFAULT_REVIEW_CONFIG.algorithm,
+      interaction:
+        effectiveOptimisticMeta?.interaction ??
+        derivedCardMeta?.interaction ??
+        DEFAULT_REVIEW_CONFIG.interaction,
+      nextDueDate:
+        effectiveOptimisticMeta?.nextDueDate ?? derivedCardMeta?.nextDueDate,
+    };
+  }, [derivedCardMeta, effectiveOptimisticMeta]);
 
   const algorithm = React.useMemo<SchedulingAlgorithm>(() => {
     if (cardMeta?.algorithm) return cardMeta.algorithm;
@@ -47,48 +92,20 @@ export default function useCurrentCardData({
     return DEFAULT_REVIEW_CONFIG.interaction;
   }, [cardMeta, latestSession]);
 
-  const prevCardUidRef = React.useRef<string | undefined>();
-
-  const applyOptimisticCardMeta = React.useCallback((newMeta: CardMeta) => {
-    const resolvedAlgorithm = newMeta.algorithm ?? DEFAULT_REVIEW_CONFIG.algorithm;
-    const resolvedInteraction = newMeta.interaction ?? DEFAULT_REVIEW_CONFIG.interaction;
-
-    setCardMeta({
-      ...newMeta,
-      algorithm: resolvedAlgorithm,
-      interaction: resolvedInteraction,
-    });
-  }, []);
-
-  React.useEffect(() => {
-    if (!currentCardRefUid) {
-      setCurrentCardData(undefined);
-      setCardMeta(undefined);
-      prevCardUidRef.current = undefined;
-      return;
-    }
-
-    const cardChanged = prevCardUidRef.current !== currentCardRefUid;
-    prevCardUidRef.current = currentCardRefUid;
-
-    if (cardChanged) {
-      if (latestSession) {
-        setCurrentCardData(latestSession);
-
-        const derivedAlgorithm = latestSession.algorithm ?? DEFAULT_REVIEW_CONFIG.algorithm;
-        const derivedInteraction = latestSession.interaction ?? DEFAULT_REVIEW_CONFIG.interaction;
-
-        const initialMeta: CardMeta = {
-          algorithm: derivedAlgorithm,
-          interaction: derivedInteraction,
-          nextDueDate: latestSession.nextDueDate,
-        };
-        setCardMeta(initialMeta);
-      } else {
-        setCardMeta(undefined);
-      }
-    }
-  }, [currentCardRefUid, latestSession]);
+  const applyOptimisticCardMeta = React.useCallback(
+    (newMeta: CardMeta) => {
+      if (!currentCardRefUid) return;
+      const resolvedAlgorithm =
+        newMeta.algorithm ?? DEFAULT_REVIEW_CONFIG.algorithm;
+      const resolvedInteraction =
+        newMeta.interaction ?? DEFAULT_REVIEW_CONFIG.interaction;
+      setOptimisticCardMeta({
+        meta: { ...newMeta, algorithm: resolvedAlgorithm, interaction: resolvedInteraction },
+        uid: currentCardRefUid,
+      });
+    },
+    [currentCardRefUid]
+  );
 
   return {
     currentCardData,

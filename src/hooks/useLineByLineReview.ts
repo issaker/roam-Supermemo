@@ -2,6 +2,14 @@
  * LBL review is the secondary queue for a parent card.
  * Child blocks keep independent session data and algorithms; the parent only
  * chooses whether this card is rendered as NORMAL or LBL.
+ *
+ * This hook owns LBL navigation (prev/next/show-answer), child focus
+ * positioning, and progressive reveal.  Grading is delegated to the unified
+ * runtime action (reviewUnit).
+ *
+ * `lineByLineRevealedCount` is local view-state, not a mirrored session fact.
+ * It controls progressive reveal: moving down reveals one more line;
+ * moving up hides all lines below the current one.
  */
 import * as React from 'react';
 import {
@@ -10,13 +18,9 @@ import {
   Session,
   isGradingAlgorithm,
   getSessionAlgorithm,
-  resolveBaseForCalculation,
-  deriveParentNextDueDateFromChildSessions,
 } from '~/models/session';
 import { getLblQueueState } from '~/models/practice';
-import { savePracticeData, updateParentNextDueDate } from '~/queries';
-import { generatePracticeData } from '~/practice';
-import { generateNewSession } from '~/queries/utils';
+import { RevisitDirective } from '~/review-runtime/types';
 
 export const shouldReinsertLblCard = ({
   currentChildIndex,
@@ -33,29 +37,43 @@ interface UseLineByLineReviewInput {
   childUidsList: string[];
   isLBLReviewMode: boolean;
   hasLoadedChildSessionsForCurrentCard: boolean;
-  dataPageTitle: string;
-  lblNextReinsertOffset: number;
-  forgotReinsertOffset: number;
-  currentIndex: number;
-  currentCardData: any;
   algorithm: SchedulingAlgorithm;
-  interaction: InteractionStyle;
-  setSessionOverrides: React.Dispatch<React.SetStateAction<Record<string, any>>>;
-  setCurrentIndex: React.Dispatch<React.SetStateAction<number>>;
-  setShowAnswers: React.Dispatch<React.SetStateAction<boolean>>;
-  setCardQueue: React.Dispatch<React.SetStateAction<string[]>>;
+  revisitDirectives: RevisitDirective[];
+  focusedChildUid?: string;
+  setFocusedChildUid: (_uid?: string) => void;
+  setMaxVisitedChildIndex: (_index: number) => void;
   childSessionData: Record<string, Session>;
-  setChildSessionData: React.Dispatch<React.SetStateAction<Record<string, Session>>>;
+  reviewUnit: (args: {
+    targetUid: string;
+    parentUid: string;
+    grade: number;
+    algorithm: SchedulingAlgorithm;
+    interaction: InteractionStyle;
+    isChild: true;
+    forgotReinsertOffset: number;
+    lblNextReinsertOffset: number;
+    currentPrimaryEntryId?: string;
+    childUidsList: string[];
+    childSessionData: Record<string, Session>;
+    currentChildIsLblNext: boolean;
+    lineByLineCurrentChildIndex: number;
+    setShowAnswers: (show: boolean) => void;
+  }) => Promise<void>;
+  forgotReinsertOffset: number;
+  lblNextReinsertOffset: number;
+  currentPrimaryEntryId?: string;
+  interaction: InteractionStyle;
+  setShowAnswers: (_show: boolean) => void;
 }
 
 interface UseLineByLineReviewOutput {
   lineByLineRevealedCount: number;
   lineByLineCurrentChildIndex: number;
+  currentChildUid: string | undefined;
   lineByLineIsCardComplete: boolean;
   dueChildCount: number;
   onLineByLineGrade: (_grade: number) => void;
   onLineByLineShowAnswer: () => void;
-  currentChildAlgorithm: SchedulingAlgorithm;
   currentChildIsLblNext: boolean;
   onLineByLinePrev: () => void;
   onLineByLineNext: () => void;
@@ -66,57 +84,61 @@ export default function useLineByLineReview({
   childUidsList,
   isLBLReviewMode,
   hasLoadedChildSessionsForCurrentCard,
-  dataPageTitle,
-  lblNextReinsertOffset,
-  forgotReinsertOffset,
-  currentIndex,
-  currentCardData,
   algorithm,
-  interaction,
-  setSessionOverrides,
-  setCurrentIndex,
-  setShowAnswers,
-  setCardQueue,
+  revisitDirectives: _revisitDirectives,
+  focusedChildUid,
+  setFocusedChildUid,
+  setMaxVisitedChildIndex,
   childSessionData,
-  setChildSessionData,
+  reviewUnit,
+  forgotReinsertOffset,
+  lblNextReinsertOffset,
+  currentPrimaryEntryId,
+  interaction,
+  setShowAnswers,
 }: UseLineByLineReviewInput): UseLineByLineReviewOutput {
+  // Local view-state for progressive reveal.  Moves up when the user
+  // navigates backward (▲) and down when they move forward (▼) or grade.
   const [lineByLineRevealedCount, setLineByLineRevealedCount] = React.useState(0);
-  const [lineByLineCurrentChildIndex, setLineByLineCurrentChildIndex] = React.useState(0);
-
-  const currentChildAlgorithm = React.useMemo(() => {
-    if (
-      !isLBLReviewMode ||
-      !childUidsList.length ||
-      lineByLineCurrentChildIndex >= childUidsList.length
-    ) {
-      return algorithm;
-    }
-    const childUid = childUidsList[lineByLineCurrentChildIndex];
-    const childSession = childSessionData[childUid];
-    return getSessionAlgorithm(childSession, algorithm);
-  }, [isLBLReviewMode, childUidsList, lineByLineCurrentChildIndex, childSessionData, algorithm]);
-
-  const currentChildIsLblNext = !isGradingAlgorithm(currentChildAlgorithm);
 
   const lblQueueState = React.useMemo(
     () => getLblQueueState(childUidsList, childSessionData, 0),
     [childUidsList, childSessionData]
   );
   const dueChildCount = lblQueueState.dueChildCount;
+  const lineByLineCurrentChildIndex = React.useMemo(() => {
+    if (!isLBLReviewMode || !childUidsList.length) return 0;
+    if (focusedChildUid) {
+      const focusedIndex = childUidsList.indexOf(focusedChildUid);
+      if (focusedIndex >= 0) return focusedIndex;
+    }
+    return lblQueueState.nextDueChildIndex;
+  }, [isLBLReviewMode, childUidsList, focusedChildUid, lblQueueState.nextDueChildIndex]);
+
+  const currentChildUid =
+    lineByLineCurrentChildIndex >= 0 && lineByLineCurrentChildIndex < childUidsList.length
+      ? childUidsList[lineByLineCurrentChildIndex]
+      : undefined;
+
+  const currentChildAlgorithm = React.useMemo(() => {
+    if (!isLBLReviewMode || !currentChildUid) return algorithm;
+    const childSession = childSessionData[currentChildUid];
+    return getSessionAlgorithm(childSession, algorithm);
+  }, [isLBLReviewMode, currentChildUid, childSessionData, algorithm]);
+
+  const currentChildIsLblNext = !isGradingAlgorithm(currentChildAlgorithm);
 
   const needsPositioningRef = React.useRef(true);
 
   React.useEffect(() => {
     if (!isLBLReviewMode || !childUidsList.length) {
       setLineByLineRevealedCount(0);
-      setLineByLineCurrentChildIndex(0);
       needsPositioningRef.current = false;
       return;
     }
     needsPositioningRef.current = true;
-  }, [isLBLReviewMode, currentCardRefUid, childUidsList, currentIndex]);
+  }, [isLBLReviewMode, currentCardRefUid, childUidsList]);
 
-  // Reposition only after the secondary queue for the new parent card has loaded.
   React.useEffect(() => {
     if (!isLBLReviewMode || !childUidsList.length) return;
     if (!needsPositioningRef.current) return;
@@ -124,155 +146,68 @@ export default function useLineByLineReview({
 
     needsPositioningRef.current = false;
 
-    const firstDueIndex = lblQueueState.nextDueChildIndex;
-    setLineByLineCurrentChildIndex(firstDueIndex);
-    setLineByLineRevealedCount(firstDueIndex + 1);
+    const preservedIndex = focusedChildUid ? childUidsList.indexOf(focusedChildUid) : -1;
+    const nextFocusIndex = preservedIndex >= 0 ? preservedIndex : lblQueueState.nextDueChildIndex;
+    setFocusedChildUid(childUidsList[nextFocusIndex]);
+    setMaxVisitedChildIndex(nextFocusIndex);
+    setLineByLineRevealedCount(nextFocusIndex + 1);
   }, [
-    isLBLReviewMode,
-    childUidsList,
-    childSessionData,
-    hasLoadedChildSessionsForCurrentCard,
-    lblQueueState,
+    isLBLReviewMode, childUidsList, childSessionData,
+    hasLoadedChildSessionsForCurrentCard, lblQueueState,
+    focusedChildUid, setFocusedChildUid, setMaxVisitedChildIndex,
   ]);
 
   const lineByLineIsCardComplete =
     isLBLReviewMode && lineByLineCurrentChildIndex >= childUidsList.length;
 
-  // Unified grading path for both LBL-Next (Progressive/FixedTime) and SM2 child blocks.
-  // The only difference is sm2_grade: undefined for LBL-Next, the actual grade for SM2.
-  // resolveBaseForCalculation handles same-day re-scoring rewind uniformly.
+  React.useEffect(() => {
+    if (!isLBLReviewMode || needsPositioningRef.current) return;
+
+    if (!currentChildUid) {
+      if (focusedChildUid) setFocusedChildUid(undefined);
+      return;
+    }
+
+    if (focusedChildUid !== currentChildUid) {
+      setFocusedChildUid(currentChildUid);
+    }
+    setMaxVisitedChildIndex(lineByLineCurrentChildIndex);
+    setLineByLineRevealedCount((prev) => Math.max(prev, lineByLineCurrentChildIndex + 1));
+  }, [
+    isLBLReviewMode, currentChildUid, focusedChildUid,
+    lineByLineCurrentChildIndex, setFocusedChildUid, setMaxVisitedChildIndex,
+  ]);
+
   const onLineByLineGrade = React.useCallback(
-    async (grade: number) => {
-      if (!currentCardRefUid || lineByLineCurrentChildIndex >= childUidsList.length) return;
+    (grade: number) => {
+      if (
+        !currentCardRefUid ||
+        !currentChildUid ||
+        lineByLineCurrentChildIndex >= childUidsList.length
+      ) return;
 
-      try {
-        const childUid = childUidsList[lineByLineCurrentChildIndex];
-        const existingChildSession =
-          childSessionData[childUid] || generateNewSession({ algorithm: currentChildAlgorithm });
-        const now = new Date();
-
-        const baseForCalculation = resolveBaseForCalculation(existingChildSession, now);
-        const sm2_grade = currentChildIsLblNext ? undefined : grade;
-        const childPracticeProps = {
-          ...baseForCalculation,
-          refUid: childUid,
-          dataPageTitle,
-          algorithm: currentChildAlgorithm,
-          ...(sm2_grade !== undefined && { sm2_grade }),
-        };
-        const childResult = generatePracticeData({ ...childPracticeProps, dateCreated: now });
-        const childNextDueDate = childResult.nextDueDate;
-
-        await savePracticeData({
-          refUid: childUid,
-          dataPageTitle,
-          dateCreated: now,
-          ...childResult,
-        });
-
-        await updateParentNextDueDate({
-          refUid: currentCardRefUid,
-          childUids: childUidsList,
-          dataPageTitle,
-        });
-
-        const updatedChildSession = { ...existingChildSession, ...childResult, dateCreated: now };
-
-        setChildSessionData((prev) => ({
-          ...prev,
-          [childUid]: updatedChildSession,
-        }));
-
-        const updatedChildSessionsForParent = {
-          ...childSessionData,
-          [childUid]: { ...updatedChildSession, nextDueDate: childNextDueDate },
-        };
-
-        setSessionOverrides((prev) => ({
-          ...prev,
-          [childUid]: updatedChildSession,
-          [currentCardRefUid]: {
-            ...currentCardData,
-            algorithm: currentChildAlgorithm,
-            interaction,
-            dateCreated: now,
-            nextDueDate: deriveParentNextDueDateFromChildSessions(
-              childUidsList,
-              updatedChildSessionsForParent,
-              now
-            ),
-          },
-        }));
-
-        if (grade === 0 && forgotReinsertOffset > 0 && currentCardRefUid) {
-          const forgotInsertIndex = currentIndex + 1 + forgotReinsertOffset;
-          setCardQueue((prev) => {
-            const newQueue = [...prev];
-            const targetIndex = Math.min(forgotInsertIndex, newQueue.length);
-            newQueue.splice(targetIndex, 0, currentCardRefUid);
-            return newQueue;
-          });
-        }
-
-        if (grade === 0) {
-          setCurrentIndex((prev) => prev + 1);
-          setShowAnswers(false);
-          return;
-        }
-
-        const nextDueIndex = getLblQueueState(
-          childUidsList,
-          updatedChildSessionsForParent,
-          lineByLineCurrentChildIndex + 1
-        ).nextDueChildIndex;
-        const isCardComplete = nextDueIndex >= childUidsList.length;
-
-        if (
-          currentChildIsLblNext &&
-          shouldReinsertLblCard({
-            currentChildIndex: lineByLineCurrentChildIndex,
-            totalChildren: childUidsList.length,
-            lblNextReinsertOffset,
-          }) &&
-          currentCardRefUid
-        ) {
-          const readInsertIndex = currentIndex + 1 + lblNextReinsertOffset;
-          setCardQueue((prev) => {
-            const newQueue = [...prev];
-            const targetIndex = Math.min(readInsertIndex, newQueue.length);
-            newQueue.splice(targetIndex, 0, currentCardRefUid);
-            return newQueue;
-          });
-          setCurrentIndex((prev) => prev + 1);
-        } else if (isCardComplete) {
-          setCurrentIndex((prev) => prev + 1);
-        }
-
-        setLineByLineCurrentChildIndex(nextDueIndex);
-        setLineByLineRevealedCount(isCardComplete ? nextDueIndex : nextDueIndex + 1);
-        setShowAnswers(false);
-      } catch (err) {
-        console.error('Memo: Failed to grade LBL card', err);
-      }
+      void reviewUnit({
+        targetUid: currentChildUid,
+        parentUid: currentCardRefUid,
+        grade,
+        algorithm: currentChildAlgorithm,
+        interaction,
+        isChild: true,
+        forgotReinsertOffset,
+        lblNextReinsertOffset,
+        currentPrimaryEntryId,
+        childUidsList,
+        childSessionData,
+        currentChildIsLblNext,
+        lineByLineCurrentChildIndex,
+        setShowAnswers,
+      });
     },
     [
-      currentCardRefUid,
-      lineByLineCurrentChildIndex,
-      childUidsList,
-      childSessionData,
-      dataPageTitle,
-      setCurrentIndex,
-      currentChildIsLblNext,
-      currentCardData,
-      currentChildAlgorithm,
-      interaction,
-      lblNextReinsertOffset,
-      forgotReinsertOffset,
-      currentIndex,
-      setSessionOverrides,
-      setChildSessionData,
-      setCardQueue,
-      setShowAnswers,
+      currentCardRefUid, currentChildUid, lineByLineCurrentChildIndex,
+      childUidsList, childSessionData, currentChildAlgorithm, interaction,
+      forgotReinsertOffset, lblNextReinsertOffset, currentPrimaryEntryId,
+      currentChildIsLblNext, reviewUnit, setShowAnswers,
     ]
   );
 
@@ -284,25 +219,31 @@ export default function useLineByLineReview({
   const onLineByLinePrev = React.useCallback(() => {
     if (lineByLineCurrentChildIndex <= 0) return;
     const newIndex = lineByLineCurrentChildIndex - 1;
-    setLineByLineCurrentChildIndex(newIndex);
+    setFocusedChildUid(childUidsList[newIndex]);
+    // Progressive reveal: hide everything below the new current line.
     setLineByLineRevealedCount(newIndex + 1);
-  }, [lineByLineCurrentChildIndex]);
+    // Reset Show Answer so SM2 children require explicit reveal again.
+    setShowAnswers(false);
+  }, [lineByLineCurrentChildIndex, childUidsList, setFocusedChildUid, setShowAnswers]);
 
   const onLineByLineNext = React.useCallback(() => {
     if (lineByLineCurrentChildIndex >= childUidsList.length - 1) return;
     const newIndex = lineByLineCurrentChildIndex + 1;
-    setLineByLineCurrentChildIndex(newIndex);
+    setFocusedChildUid(childUidsList[newIndex]);
+    // Progressive reveal: reveal the new line.
     setLineByLineRevealedCount((prev) => Math.max(prev, newIndex + 1));
-  }, [lineByLineCurrentChildIndex, childUidsList.length]);
+    // Reset Show Answer so SM2 children require explicit reveal again.
+    setShowAnswers(false);
+  }, [lineByLineCurrentChildIndex, childUidsList, setFocusedChildUid, setShowAnswers]);
 
   return {
     lineByLineRevealedCount,
     lineByLineCurrentChildIndex,
+    currentChildUid,
     lineByLineIsCardComplete,
     dueChildCount,
     onLineByLineGrade,
     onLineByLineShowAnswer,
-    currentChildAlgorithm,
     currentChildIsLblNext,
     onLineByLinePrev,
     onLineByLineNext,

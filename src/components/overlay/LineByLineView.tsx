@@ -25,7 +25,6 @@ interface LineByLineViewProps {
   autoCollapseBlocks: boolean;
   showAnswers: boolean;
   currentChildAlgorithm: SchedulingAlgorithm;
-  setChildHasBlockChildren: (_hasBlockChildren: boolean) => void;
   setChildHasCloze: (_hasCloze: boolean) => void;
 }
 
@@ -40,18 +39,9 @@ const LineByLineView = ({
   autoCollapseBlocks,
   showAnswers,
   currentChildAlgorithm,
-  setChildHasBlockChildren,
   setChildHasCloze,
 }: LineByLineViewProps) => {
   const { blockInfo } = useBlockInfo({ refUid: currentCardRefUid });
-
-  const currentChildUid = childUidsList[lineByLineCurrentChildIndex] || '';
-  const { blockInfo: currentChildBlockInfo } = useBlockInfo({ refUid: currentChildUid });
-  const currentChildHasBlockChildren = !!currentChildBlockInfo.children && !!currentChildBlockInfo.children.length;
-
-  React.useEffect(() => {
-    setChildHasBlockChildren(currentChildHasBlockChildren);
-  }, [currentChildHasBlockChildren, setChildHasBlockChildren]);
 
   const { dueChildCount: dueCount } = React.useMemo(
     () => getLblQueueState(childUidsList, childSessionData),
@@ -83,7 +73,13 @@ const LineByLineView = ({
           <LineByLineItem key={uid} $isCurrent={isCurrentLine} $isMastered={!!isMastered}>
             <CardBlock
               refUid={uid}
-              showAnswers={isCurrentGrading ? showAnswers : true}
+              showAnswers={
+                isCurrentGrading
+                  ? showAnswers         // current SM2 child: controlled by user
+                  : isMastered
+                    ? true              // already reviewed: always show
+                    : showAnswers       // not yet reviewed: follow current state
+              }
               setHasCloze={isCurrentLine ? setChildHasCloze : NOOP}
               breadcrumbs={[]}
               showBreadcrumbs={false}

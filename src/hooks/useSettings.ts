@@ -29,7 +29,6 @@
  * NOT directly call extensionAPI.settings.set() or saveSettingsToPage().
  */
 import React from 'react';
-import settingsPanelConfig from '~/settingsPanelConfig';
 import { loadSettingsFromPage, saveSettingsToPage } from '~/queries/settings';
 
 export type DeckConfig = { name: string; swapQA: boolean; weight: number };
@@ -50,7 +49,8 @@ export type Settings = {
 };
 
 export const defaultSettings: Settings = {
-  deckConfigs: '[{"name":"memo","swapQA":false,"weight":50},{"name":"DailyNote","swapQA":false,"weight":50}]',
+  deckConfigs:
+    '[{"name":"memo","swapQA":false,"weight":50},{"name":"DailyNote","swapQA":false,"weight":50}]',
   dataPageTitle: 'roam/memo',
   dailyLimit: 0,
   historyCleanupKeepCount: 3,
@@ -102,28 +102,19 @@ const useSettings = () => {
   const pendingPageSyncRef = React.useRef<Settings | null>(null);
   const hasInitializedRef = React.useRef(false);
 
-  React.useEffect(() => {
-    window.roamMemo.extensionAPI.settings.panel.create(
-      settingsPanelConfig({ settings, setSettings })
-    );
-  }, [setSettings, settings]);
-
   // One-time startup: load page data into extensionAPI if it's empty (roam/js cold start)
-  const syncPageToExtensionAPI = React.useCallback(
-    async (dataPageTitle: string) => {
-      const pageSettings = await loadSettingsFromPage(dataPageTitle);
-      if (!pageSettings) return false;
+  const syncPageToExtensionAPI = React.useCallback(async (dataPageTitle: string) => {
+    const pageSettings = await loadSettingsFromPage(dataPageTitle);
+    if (!pageSettings) return false;
 
-      const canWrite = typeof window.roamMemo?.extensionAPI?.settings?.set === 'function';
-      if (canWrite) {
-        for (const [key, value] of Object.entries(pageSettings)) {
-          window.roamMemo.extensionAPI.settings.set(key, value);
-        }
+    const canWrite = typeof window.roamMemo?.extensionAPI?.settings?.set === 'function';
+    if (canWrite) {
+      for (const [key, value] of Object.entries(pageSettings)) {
+        window.roamMemo.extensionAPI.settings.set(key, value);
       }
-      return true;
-    },
-    []
-  );
+    }
+    return true;
+  }, []);
 
   // Fill any missing default values in extensionAPI
   const ensureAllDefaults = React.useCallback(() => {
@@ -176,7 +167,7 @@ const useSettings = () => {
     initialize();
   }, [syncSettingsFromAPI, syncPageToExtensionAPI, ensureAllDefaults]);
 
-  // Listen for settings changes from other components (e.g. settingsPanelConfig)
+  // Listen for settings changes from other components
   React.useEffect(() => {
     const handleSettingsChange = () => {
       syncSettingsFromAPI();

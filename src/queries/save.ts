@@ -264,8 +264,9 @@ export const updateParentNextDueDate = async ({
     heading: 3,
   });
 
-  const cardDataBlockUid = await getChildBlock(dataBlockUid, `((${refUid}))`);
-  if (!cardDataBlockUid) return;
+  const cardDataBlockUid = await getOrCreateChildBlock(dataBlockUid, `((${refUid}))`, 0, {
+    open: false,
+  });
 
   const childSessions = await getChildSessionData({ childUids, dataPageTitle });
 

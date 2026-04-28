@@ -1,6 +1,6 @@
 const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin');
 
-module.exports = {
+const baseConfig = {
   entry: './src/extension.tsx',
   externalsType: 'window',
   resolve: {
@@ -14,19 +14,9 @@ module.exports = {
     '@blueprintjs/core': ['Blueprint', 'Core'],
     '@blueprintjs/select': ['Blueprint', 'Select'],
   },
-  output: {
-    filename: 'extension.js',
-    path: __dirname,
-    library: {
-      name: 'RoamMemo',
-      type: 'umd',
-      export: 'default',
-    },
-  },
   optimization: {
     splitChunks: false,
   },
-  // Production build uses external source-map, dev mode uses inline-source-map
   devtool: process.env.NODE_ENV === 'production' ? 'source-map' : 'inline-source-map',
   module: {
     rules: [
@@ -38,3 +28,31 @@ module.exports = {
     ],
   },
 };
+
+module.exports = [
+  {
+    ...baseConfig,
+    output: {
+      filename: 'extension.js',
+      path: __dirname,
+      library: {
+        type: 'module',
+      },
+    },
+    experiments: {
+      outputModule: true,
+    },
+  },
+  {
+    ...baseConfig,
+    output: {
+      filename: 'standalone.js',
+      path: __dirname,
+      library: {
+        name: 'RoamMemo',
+        type: 'umd',
+        export: 'default',
+      },
+    },
+  },
+];

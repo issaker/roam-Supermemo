@@ -73,15 +73,16 @@ function onload({ extensionAPI }: { extensionAPI: any }) {
       return originalGet ? originalGet(key) : undefined;
     };
 
-    if (!compatibleExtensionAPI.settings.panel) {
-      compatibleExtensionAPI.settings.panel = {
-        create: () => {},
-      };
-    }
-
     window.roamMemo = {
       extensionAPI: compatibleExtensionAPI,
     };
+
+    if (compatibleExtensionAPI.settings?.panel?.create) {
+      compatibleExtensionAPI.settings.panel.create({
+        tabTitle: 'Memo',
+        settings: [],
+      });
+    }
 
     FocusStyleManager.onlyShowFocusOnTabs();
 

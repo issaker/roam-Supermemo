@@ -9,6 +9,7 @@ import { Records, RecordUid, Session, isSessionMastered } from '~/models/session
 import { CompletionStatus, RenderMode, Today, TodayInitial, sortNormalDueCardUids } from '~/models/practice';
 import { generateNewSession } from '~/queries/utils';
 import { DeckConfig } from '~/hooks/useSettings';
+import * as dateUtils from '~/utils/date';
 
 const fisherYatesShuffle = <T>(array: T[]): T[] => {
   const result = [...array];
@@ -91,7 +92,11 @@ export const calculateCompletedTodayCounts = ({ today, tagsList, sessionData }) 
     Object.keys(currentTagSessionData).forEach((cardUid) => {
       const cardData = currentTagSessionData[cardUid];
       if (cardData?.isNew) return;
-      if (isSessionMastered(cardData, now)) {
+      const completedToday =
+        !!cardData?.dateCreated &&
+        dateUtils.isSameDay(cardData.dateCreated, now) &&
+        isSessionMastered(cardData, now);
+      if (completedToday) {
         count++;
         completedUids.push(cardUid);
       }

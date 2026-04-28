@@ -510,6 +510,23 @@ const limitRemainingPracticeData = ({
     weightMap[config.name] = config.weight;
   }
 
+  // Zero out weight-0 decks: they must receive no cards regardless of
+  // daily limit.  This must happen before any totals are computed so the
+  // completed / due / new counts are accurate for the limit calculation.
+  for (const tag of tagsList) {
+    if (tag in weightMap && weightMap[tag] === 0) {
+      today.tags[tag] = {
+        ...today.tags[tag],
+        dueUids: [],
+        newUids: [],
+        completedUids: [],
+        due: 0,
+        new: 0,
+        completed: 0,
+      };
+    }
+  }
+
   const deckCaps: Record<string, number> = {};
   for (const tag of tagsList) {
     if (tag in weightMap) {
@@ -517,9 +534,11 @@ const limitRemainingPracticeData = ({
     }
   }
 
-  const totalCompleted = tagsList.reduce((sum, tag) => sum + today.tags[tag].completed, 0);
-  const totalDueAvailable = tagsList.reduce((sum, tag) => sum + today.tags[tag].dueUids.length, 0);
-  const totalNewAvailable = tagsList.reduce((sum, tag) => sum + today.tags[tag].newUids.length, 0);
+  // Exclude weight-0 decks from totals so the limit calculation is accurate.
+  const enabledTags = tagsList.filter((tag) => !(tag in weightMap) || weightMap[tag] > 0);
+  const totalCompleted = enabledTags.reduce((sum, tag) => sum + today.tags[tag].completed, 0);
+  const totalDueAvailable = enabledTags.reduce((sum, tag) => sum + today.tags[tag].dueUids.length, 0);
+  const totalNewAvailable = enabledTags.reduce((sum, tag) => sum + today.tags[tag].newUids.length, 0);
   const totalRemaining = totalDueAvailable + totalNewAvailable;
 
   if (!dailyLimit || !totalRemaining || isCramming) {

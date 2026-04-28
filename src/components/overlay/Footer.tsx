@@ -183,8 +183,9 @@ const Footer = ({
         combo: 'up',
         global: true,
         label: 'Previous Line',
-        onKeyDown: () => {
+        onKeyDown: (e: KeyboardEvent) => {
           if (isLineByLine && onLineByLinePrev) {
+            e.preventDefault();
             onLineByLinePrev();
           }
         },
@@ -194,8 +195,9 @@ const Footer = ({
         combo: 'down',
         global: true,
         label: 'Next Line',
-        onKeyDown: () => {
+        onKeyDown: (e: KeyboardEvent) => {
           if (isLineByLine && onLineByLineNext) {
+            e.preventDefault();
             onLineByLineNext();
           }
         },
@@ -1045,11 +1047,8 @@ const AlgorithmSelector = ({
           </SelectorItemWrapper>
         );
       }}
-      onItemSelect={(option: AlgorithmOption) => {
-        onSelectAlgorithm(option.value);
-      }}
+      onItemSelect={(option: AlgorithmOption) => onSelectAlgorithm(option.value)}
       popoverProps={{ minimal: true }}
-      itemPredicate={() => true}
     >
       <Blueprint.Button
         rightIcon="caret-down"
@@ -1103,11 +1102,8 @@ const InteractionSelector = ({
           </SelectorItemWrapper>
         );
       }}
-      onItemSelect={(option: InteractionOption) => {
-        onSelectInteraction(option.value);
-      }}
+      onItemSelect={(option: InteractionOption) => onSelectInteraction(option.value)}
       popoverProps={{ minimal: true }}
-      itemPredicate={() => true}
     >
       <Blueprint.Button
         icon={activeOption.icon}

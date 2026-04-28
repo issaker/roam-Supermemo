@@ -169,6 +169,35 @@ export const isSessionMastered = (
   return !!session?.nextDueDate && session.nextDueDate > now;
 };
 
+export type ReviewStatus = 'new' | 'dueToday' | 'scheduled' | 'pastDue';
+
+/**
+ * Resolve the current review status from the displayed learning unit's session.
+ *
+ * First principle:
+ * - due / not learned: nextDueDate <= now, or missing nextDueDate
+ * - scheduled / learned: nextDueDate > now
+ *
+ * New cards remain a separate UI state because they have not entered scheduling yet.
+ */
+export const getReviewStatus = ({
+  session,
+  isNew,
+  now = new Date(),
+}: {
+  session: Pick<Session, 'nextDueDate'> | undefined;
+  isNew?: boolean;
+  now?: Date;
+}): ReviewStatus | null => {
+  if (isNew) return 'new';
+
+  const nextDueDate = session?.nextDueDate;
+  if (!nextDueDate) return 'dueToday';
+  if (nextDueDate > now) return 'scheduled';
+  if (nextDueDate.toDateString() === now.toDateString()) return 'dueToday';
+  return 'pastDue';
+};
+
 // Shared scheduling semantics used by both NORMAL and LBL queue strategies.
 export const getDueChildIndices = (
   childUidsList: string[],
