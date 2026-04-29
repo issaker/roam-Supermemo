@@ -488,20 +488,25 @@ export const useReviewRuntime = ({
         }));
       };
 
+      // setShowAnswers(false) must precede advancePrimaryQueue() so the
+      // current card's override is reset before any synchronous re-render
+      // (e.g. from keyboard shortcuts outside React's batch context) updates
+      // activeSetShowAnswersRef to point to the next card.  Otherwise the
+      // reinserted card reappears with a stale showAnswers=true override.
       if (!isChild) {
         // Normal card: Forgot with offset → reinsert this card later
         if (isForgot && forgotReinsertOffset > 0) {
           addRevisitDirective(targetUid, forgotReinsertOffset, 'forgot');
         }
-        advancePrimaryQueue();
         setShowAnswers(false);
+        advancePrimaryQueue();
       } else if (isForgot) {
         // LBL child Forgot: reinsert PARENT card later, advance queue
         if (forgotReinsertOffset > 0) {
           addRevisitDirective(parentUid!, forgotReinsertOffset, 'forgot');
         }
-        advancePrimaryQueue();
         setShowAnswers(false);
+        advancePrimaryQueue();
       } else {
         // LBL child non-Forgot: advance within children or complete card.
         const childList = childUidsList!;
@@ -511,6 +516,8 @@ export const useReviewRuntime = ({
           lineByLineCurrentChildIndex! + 1
         ).nextDueChildIndex;
         const isCardComplete = nextDueIndex >= childList.length;
+
+        setShowAnswers(false);
 
         if (
           currentChildIsLblNext &&
@@ -529,7 +536,6 @@ export const useReviewRuntime = ({
 
         setFocusedChildUid(childList[nextDueIndex]);
         setMaxVisitedChildIndex(nextDueIndex);
-        setShowAnswers(false);
       }
 
       // ── 4. Persist to Roam ──

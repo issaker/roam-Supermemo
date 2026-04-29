@@ -14,7 +14,7 @@ npm run test           # TZ=UTC jest (all tests)
 npm run check          # lint + typecheck + test (CI parity)
 npx jest --no-coverage -t "test name"  # single test
 
-npm run format         # prettier
+npm run format         # prettier (JS/JSX/JSON only — NOT .ts/.tsx)
 npm run test-dev       # TZ=UTC jest --watch --verbose --runInBand
 npm run test-debug     # TZ=UTC node --inspect-brk jest --runInBand --watch --verbose
 ```
@@ -26,7 +26,7 @@ Queue System (navigation only)          Card System (rendering / interaction)
 ─────────────────────────────           ────────────────────────────────────
 X-axis Primary: ◀/▶, urgency sort       useCardBlock(refUid, session)
 Y-axis LBL:     ▲/▼, doc-order sort       → blockInfo, hasBlockChildren
-reviewUnit() — single grading action      → hasCloze (guard, init=true)
+reviewUnit() — single grading action      → hasCloze (derived from block data)
                                           → showAnswers (derived + override)
                                           → algorithm (from OWN session)
 ```
@@ -35,11 +35,13 @@ reviewUnit() — single grading action      → hasCloze (guard, init=true)
 
 **LBL is a mini-deck.** One X-axis entry. Y-axis queue opens children in document order. Parent `nextDueDate` = earliest child due date.
 
+**Import path alias:** `~/*` maps to `./src/*` (configured in tsconfig.json and webpack). No relative import chains needed.
+
 ## Inviolable Rules
 
-1. **No mirrored state.** One session per uid (`facts.latestByUid`). One view state (`focusedPrimaryUid`, `focusedChildUid`, `revisitDirectives`). Everything else derived.
+1. **No mirrored state.** One session per uid (`facts.latestByUid`). One view state (`currentIndex`, `previousPrimaryUid`, `focusedChildUid`, `revisitDirectives`). Everything else derived.
 2. **No separate code paths for normal vs LBL in card interaction.** `useCardBlock` is the single card pipeline. `reviewUnit` is the single grading action.
-3. **Card algorithm from the card's OWN session, never a parent fallback.**
+3. **Card algorithm from the card's OWN session.** When a card has its own session, its algorithm comes from that session (not a parent). For new cards without a session, `useCardBlock` accepts a `fallbackAlgorithm` parameter (LBL children pass the parent's algorithm; normal cards use `DEFAULT_REVIEW_CONFIG.algorithm`).
 4. **Bias toward removing state, not adding sync patches.** If two states drifted apart, remove one.
 
 ## Key Modules
@@ -47,20 +49,20 @@ reviewUnit() — single grading action      → hasCloze (guard, init=true)
 | Path | Role |
 |------|------|
 | `src/hooks/useCardBlock.ts` | Single card pipeline: block info, cloze guard, showAnswers. |
-| `src/review-runtime/useReviewRuntime.ts` | Unified hook: `SessionFacts` + `ViewState` + selectors + actions |
-| `src/review-runtime/actions.ts` | Pure action functions: `reviewUnit`, `undoLatestReview`, `updateReviewConfigAction` |
-| `src/review-runtime/selectors.ts` | Pure derivation: `deriveDeckSnapshot`, `derivePrimaryQueueEntries`, `deriveFocusedPrimaryEntry` |
-| `src/review-runtime/types.ts` | `SessionFacts`, `ViewState`, `DeckSnapshot`, `RevisitDirective`, `QueueEntry` |
+| `src/review-runtime/useReviewRuntime.ts` | Unified hook: `SessionFacts` + `ReviewViewState` + inline actions (`reviewUnit`, `updateReviewConfigAction`). Actions are `useCallback` hooks within this file, not a separate module. |
+| `src/review-runtime/selectors.ts` | Pure derivation: `deriveDeckSnapshot`, `deriveChildSessionMap`. |
+| `src/review-runtime/types.ts` | `SessionFacts`, `ReviewViewState`, `DeckSnapshot`, `RevisitDirective`. |
 | `src/hooks/useLineByLineReview.ts` | LBL Y-axis: child positioning, progressive reveal. Grading delegated to `reviewUnit`. |
 | `src/hooks/useCurrentCardData.tsx` | `currentCardData = latestSession` (alias). Optimistic `cardMeta` overlay with uid guard. |
 | `src/hooks/useSettings.ts` | Settings store: extensionAPI primary, Roam page backup (5s debounce). |
 | `src/models/session.ts` | Session model, `SchedulingAlgorithm`, `InteractionStyle`, `ReviewStatus`, `resolveBaseForCalculation` |
 | `src/models/practice.ts` | Queue strategies: `sortNormalDueCardUids` (urgency), `getLblQueueState` (doc order scan). |
 | `src/queries/data.ts` | Roam page read/write, session parsing (`parseLatestSession`, `mergeSessionSnapshot`), `SESSION_SNAPSHOT_KEYS` |
-| `src/queries/save.ts` | Writing sessions to Roam: `savePracticeData`, `updateParentNextDueDate`, `updateReviewConfig` |
+| `src/queries/save.ts` | Writing sessions to Roam: `savePracticeData`, `updateParentNextDueDate`, `updateReviewConfig`, `undoCardSession` |
 | `src/queries/today.ts` | Due/new/completed calculation pipeline. Mutable accumulator patched across 6 steps. |
 | `src/queries/settings.ts` | Settings persistence on Roam page (delete-then-create per key). |
 | `src/practice.ts` | Pure scheduling math: SM2 (`supermemo`), Progressive (`progressiveInterval`), Fixed Time. |
+| `src/theme.ts` | Algorithm colors, intent colors, and styled-component color tokens. Documented in `THEME_SYSTEM.md`. |
 
 ## Data Flow — App → Overlay
 
@@ -72,9 +74,9 @@ App (root)
 └── PracticeSessionProvider (context values)
     └── PracticeOverlay
         ├── useReviewRuntime(practiceData, today, selectedTag, ...)
-        │     → facts (SessionFacts), viewState (ViewState)
-        │     → deckSnapshot, queueEntries, focusedPrimary (all derived)
-        │     → reviewUnit, undoLatestReview, updateReviewConfigAction
+        │     → facts (SessionFacts), viewState (ReviewViewState)
+        │     → deckSnapshot, focusedPrimary (derived from facts + viewState)
+        │     → reviewUnit, updateReviewConfigAction
         ├── useCurrentCardData → cardMeta, algorithm, interaction
         ├── useCardBlock(activeUid, activeSession) → showAnswers, algorithm
         ├── useLineByLineReview → line-by-line navigation + grading
@@ -123,25 +125,27 @@ Do NOT remove `library.export: 'default'` from standalone config — Roam loads 
 
 ## Key Patterns
 
-**Navigation:** `focusPrimaryByOffset(-1)` checks `previousPrimaryUid` (set by `focusNextAfterMutation` after review) before any index-based logic. This lets the user go back to a just-reviewed card even when it has left the active queue. Cleared on first use to prevent ping-pong.
+**Navigation:** `focusPrimaryByOffset(-1)` checks `previousPrimaryUid` (set by `advancePrimaryQueue` after review) before any index-based logic. This lets the user go back to a just-reviewed card even when it has left the active queue position. The `previousPrimaryUid` flag is cleared on first use to prevent ping-pong.
 
-**ShowAnswers:** Per-card via `useCardBlock`. `hasCloze` starts `true` — the guard prevents SM2 answer flash until `CardBlock` confirms no cloze. `showAnswers = override || defaultShowAnswers`. Override cleared on `refUid` change.
+**ShowAnswers:** Per-card via `useCardBlock`. `hasCloze` is derived from block data (child blocks or `{...}` syntax in text). `showAnswers = override || defaultShowAnswers`. The override is keyed by `refUid` in `overrideMap` so each card starts with a clean slate synchronously — no effect-based reset needed.
 
-**Revisit Directives:** When a card is Forgotten, a `RevisitDirective` is inserted into the queue (at `forgotReinsertOffset` positions after current entry) so the card reappears later in the same session. LBL-Next cards use a separate `lblNextReinsertOffset`.
+**showAnswers reset ordering:** In `reviewUnit`, `setShowAnswers(false)` must execute BEFORE `advancePrimaryQueue()`. When keyboard shortcuts trigger grading (outside React's event batch context), `advancePrimaryQueue`'s `setViewState` synchronously re-renders and updates `activeSetShowAnswersRef.current` to the next card's setter. Calling `setShowAnswers(false)` first ensures the current card's override is reset.
 
-**Optimistic updates:** `reviewUnit` does optimistic facts update → focus advance → async save to Roam. `updateReviewConfigAction` optimistically updates `facts.latestByUid` and `cardMeta` before the async Roam write.
+**Revisit Directives:** When a card is Forgotten, a `RevisitDirective` is inserted into the queue (at `forgotReinsertOffset` positions after current entry) so the card reappears later in the same session. LBL-Next cards use a separate `lblNextReinsertOffset`. Directives add DUPLICATE entries — cards are never removed from the queue.
+
+**Optimistic updates:** `reviewUnit` does optimistic facts update → setShowAnswers reset → focus advance → async save to Roam. `updateReviewConfigAction` optimistically updates `facts.latestByUid` and `cardMeta` before the async Roam write.
 
 **LBL Progressive Reveal:** `lineByLineRevealedCount` is local view-state (not mirrored). Moving down reveals one more line; moving up hides all lines below current.
 
-**Child algorithm:** `getSessionAlgorithm(childSession, DEFAULT_REVIEW_CONFIG.algorithm)` — falls back to Progressive, never the parent's algorithm.
-
-**Actions module:** `src/review-runtime/actions.ts` contains the pure action logic (`reviewUnit`, `undoLatestReview`, `updateReviewConfigAction`) extracted from the hook. These accept `RuntimeUpdaters` callbacks for state writes and are callable from both the hook and future non-React contexts.
+**Child algorithm:** `getSessionAlgorithm(childSession, fallbackAlgorithm)` — uses the child's own session algorithm if present; otherwise falls back to the provided fallback. LBL children pass the parent's algorithm as fallback; normal cards use `DEFAULT_REVIEW_CONFIG.algorithm`.
 
 ## Pitfalls
 
 - **Build:** `library.export: 'default'` in webpack standalone config must not be removed (Roam loads via `<script>`).
+- **Filename conflict:** Do NOT name a roam/js script `extension.js` — Roam reserves this name for Extension Settings. The standalone output is named `standalone.js` for this reason.
 - **No runtime backward compat.** Old data MUST migrate via Data Migration panel (Settings → Data Migration).
 - **`resolveBaseForCalculation`** must be called before scheduling math on same-day re-reviews, or intervals inflate.
-- **`hasCloze` init=true** is load-bearing. Changing to false causes SM2 answer flash across the entire system.
+- **`hasCloze` is derived from block data** (children or `{...}` in text), not from DOM. Do not add a useState + useEffect for it — the `init=true` pattern was replaced with pure derivation.
+- **`setShowAnswers(false)` MUST precede `advancePrimaryQueue()`** in `reviewUnit`. Reordering them causes the wrong card's showAnswers override to be reset when keyboard shortcuts fire grading (Blueprint's global event listeners are outside React's batch context), breaking showAnswers for reinserted Forgot cards.
 - **Standalone output:** The `standalone.js` bundle also gets the `@blueprintjs` externals — ensure CDN script tags include Blueprint for roam/js users.
 - **React 17:** Project uses React 17 + Blueprint 3.x. Do not upgrade without verifying `@blueprintjs/select` v3 compatibility.
