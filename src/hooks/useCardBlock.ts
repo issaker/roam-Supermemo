@@ -34,14 +34,19 @@ const useCardBlock = (
   const { blockInfo } = useBlockInfo({ refUid: refUid || '' });
   const hasBlockChildren = !!blockInfo.children && !!blockInfo.children.length;
 
-  // hasCloze starts matching whether the card has children.  Cards without
-  // children can't contain cloze deletions, so the guard is skipped and
-  // SM2 answers show immediately.  Cards with children start guarded
-  // (hasCloze=true) until CardBlock confirms no cloze via setHasCloze(false).
-  // This prevents the SM2 answer flash: changing init to false would show
-  // answers briefly before useCloze hides them.
-  const [hasCloze, setHasCloze] = React.useState(hasBlockChildren);
-  React.useEffect(() => { setHasCloze(hasBlockChildren); }, [refUid, hasBlockChildren]);
+  // hasCloze is derived from block DATA (not DOM), at the same time and
+  // through the same pipeline as hasBlockChildren.  This means both cloze-
+  // only cards (no children, just {} in the block text) and child-block
+  // cards (hasBlockChildren) follow the identical "data → defaultShowAnswers
+  // = false" path.  No dependency on useCloze DOM processing for the
+  // decision — useCloze only handles the visual <span> wrapping.
+  //
+  // Cloze pattern: {any text}
+  const hasCloze = hasBlockChildren || /\{.+?\}/.test(blockInfo.string || '');
+
+  // Stable noop — hasCloze is purely derived, no longer driven by useCloze
+  // DOM callbacks.  Kept for API compatibility with CardBlock / useCloze.
+  const setHasCloze = React.useCallback(() => {}, []);
 
   // Algorithm from the card's OWN session, not a parent.
   // If no session, use the provided fallback (or global default).
@@ -53,9 +58,9 @@ const useCardBlock = (
   // Derive the default answer visibility for this specific card.
   const defaultShowAnswers = React.useMemo(() => {
     if (!isGradingAlgorithm(algorithm)) return true;
-    if (hasBlockChildren || hasCloze) return false;
+    if (hasCloze) return false;
     return true;
-  }, [algorithm, hasBlockChildren, hasCloze]);
+  }, [algorithm, hasCloze]);
 
   // Per-card showAnswers override ("Show Answer" click), keyed by refUid.
   //
