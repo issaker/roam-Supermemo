@@ -59,6 +59,13 @@ const baseConfig = {
 // to UMD — that will break Extension Settings loading. DO NOT remove
 // standalone.js — roam/js users need it.
 //
+// CRITICAL: The filename "extension.js" is reserved by Roam's Extension
+// Settings system. If a roam/js script is ALSO named "extension.js",
+// Roam will try to load it as a local Extension Settings extension,
+// which fails for UMD format. The roam/js bundle MUST use a different
+// filename ("standalone.js") to avoid this conflict. Users loading
+// from roam/js should reference standalone.js, not extension.js.
+//
 module.exports = [
   {
     ...baseConfig,

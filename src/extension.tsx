@@ -116,13 +116,17 @@ const plugin = {
 };
 
 //
-// Dual export for two loading mechanisms:
+// Dual export for two loading mechanisms, served by TWO separate files:
 //   export default → used when loaded as ES module (Roam Depot)
 //   window.RoamMemo → used when loaded via <script> tag (roam/js)
 //
 // The webpack build produces two output files from this same source:
 //   extension.js (ES module)  → for Roam Depot dynamic import()
 //   standalone.js (UMD)       → for roam/js <script> tag
+//
+// The roam/js file MUST be named "standalone.js", not "extension.js".
+// Roam reserves "extension.js" for Extension Settings; using the same
+// name for a roam/js script causes a loading conflict.
 //
 // Do NOT remove either export — each serves a different loading path.
 // See webpack.config.js for why single-file dual-use is impossible.
