@@ -29,6 +29,36 @@ const baseConfig = {
   },
 };
 
+//
+// TWO-OUTPUT ARCHITECTURE (DO NOT COLLAPSE INTO ONE)
+//
+// Roam Research has two mutually exclusive extension loading mechanisms:
+//
+//   1. Extension Settings (Roam Depot): loads the extension via dynamic
+//      import(), which requires ES module format with `export default`.
+//      The `export` keyword is MANDATORY — without it, module.default is
+//      undefined and the plugin silently fails to load.
+//
+//   2. roam/js (<script> tag): loads the extension via a plain <script>
+//      tag. The `export` keyword at top level is a SyntaxError in
+//      non-module scripts — the browser parser throws before any code runs.
+//
+// These two requirements are FUNDAMENTALLY INCOMPATIBLE in a single file:
+//   - ES module `export` → SyntaxError in <script> tag
+//   - UMD wrapper (no `export`) → module.default is undefined in import()
+//
+// Therefore we produce TWO bundles from the same source:
+//   - extension.js  → ES module for Roam Depot
+//   - standalone.js → UMD for roam/js <script> tag
+//
+// The source code (src/extension.tsx) does BOTH `export default` AND
+// `window.RoamMemo = plugin`, but webpack's output format determines
+// which loading mechanism actually works.
+//
+// DO NOT merge these into a single output. DO NOT switch extension.js
+// to UMD — that will break Extension Settings loading. DO NOT remove
+// standalone.js — roam/js users need it.
+//
 module.exports = [
   {
     ...baseConfig,

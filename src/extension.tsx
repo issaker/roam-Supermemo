@@ -115,6 +115,18 @@ const plugin = {
   onunload,
 };
 
+//
+// Dual export for two loading mechanisms:
+//   export default → used when loaded as ES module (Roam Depot)
+//   window.RoamMemo → used when loaded via <script> tag (roam/js)
+//
+// The webpack build produces two output files from this same source:
+//   extension.js (ES module)  → for Roam Depot dynamic import()
+//   standalone.js (UMD)       → for roam/js <script> tag
+//
+// Do NOT remove either export — each serves a different loading path.
+// See webpack.config.js for why single-file dual-use is impossible.
+//
 export default plugin;
 
 if (typeof window !== 'undefined') {
