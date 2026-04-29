@@ -39,7 +39,7 @@ reviewUnit() — single grading action      → hasCloze (derived from block dat
 
 ## Inviolable Rules
 
-1. **No mirrored state.** One session per uid (`facts.latestByUid`). One view state (`currentIndex`, `previousPrimaryUid`, `focusedChildUid`, `revisitDirectives`). Everything else derived.
+1. **No mirrored state.** One session per uid (`facts.latestByUid`). One queue state (`primaryQueue`). One view state (`currentIndex`, `focusedChildUid`). Everything else derived.
 2. **No separate code paths for normal vs LBL in card interaction.** `useCardBlock` is the single card pipeline. `reviewUnit` is the single grading action.
 3. **Card algorithm from the card's OWN session.** When a card has its own session, its algorithm comes from that session (not a parent). For new cards without a session, `useCardBlock` accepts a `fallbackAlgorithm` parameter (LBL children pass the parent's algorithm; normal cards use `DEFAULT_REVIEW_CONFIG.algorithm`).
 4. **Bias toward removing state, not adding sync patches.** If two states drifted apart, remove one.
@@ -51,7 +51,7 @@ reviewUnit() — single grading action      → hasCloze (derived from block dat
 | `src/hooks/useCardBlock.ts` | Single card pipeline: block info, cloze guard, showAnswers. |
 | `src/review-runtime/useReviewRuntime.ts` | Unified hook: `SessionFacts` + `ReviewViewState` + inline actions (`reviewUnit`, `updateReviewConfigAction`). Actions are `useCallback` hooks within this file, not a separate module. |
 | `src/review-runtime/selectors.ts` | Pure derivation: `deriveDeckSnapshot`, `deriveChildSessionMap`. |
-| `src/review-runtime/types.ts` | `SessionFacts`, `ReviewViewState`, `DeckSnapshot`, `RevisitDirective`. |
+| `src/review-runtime/types.ts` | `SessionFacts`, `ReviewViewState`, `DeckSnapshot`. |
 | `src/hooks/useLineByLineReview.ts` | LBL Y-axis: child positioning, progressive reveal. Grading delegated to `reviewUnit`. |
 | `src/hooks/useCurrentCardData.tsx` | `currentCardData = latestSession` (alias). Optimistic `cardMeta` overlay with uid guard. |
 | `src/hooks/useSettings.ts` | Settings store: extensionAPI primary, Roam page backup (5s debounce). |
@@ -125,13 +125,13 @@ Do NOT remove `library.export: 'default'` from standalone config — Roam loads 
 
 ## Key Patterns
 
-**Navigation:** `focusPrimaryByOffset(-1)` checks `previousPrimaryUid` (set by `advancePrimaryQueue` after review) before any index-based logic. This lets the user go back to a just-reviewed card even when it has left the active queue position. The `previousPrimaryUid` flag is cleared on first use to prevent ping-pong.
+**Navigation:** Pure index-based. `focusPrimaryByOffset(-1)` moves to `currentIndex - 1`. After `reviewUnit` advances `currentIndex` by 1, the just-reviewed card is always at `currentIndex - 1` (cards are never removed from the queue). No special back-to-previous logic needed.
 
 **ShowAnswers:** Per-card via `useCardBlock`. `hasCloze` is derived from block data (child blocks or `{...}` syntax in text). `showAnswers = override || defaultShowAnswers`. The override is keyed by `refUid` in `overrideMap` so each card starts with a clean slate synchronously — no effect-based reset needed.
 
-**showAnswers reset ordering:** In `reviewUnit`, `setShowAnswers(false)` must execute BEFORE `advancePrimaryQueue()`. When keyboard shortcuts trigger grading (outside React's event batch context), `advancePrimaryQueue`'s `setViewState` synchronously re-renders and updates `activeSetShowAnswersRef.current` to the next card's setter. Calling `setShowAnswers(false)` first ensures the current card's override is reset.
+**showAnswers reset ordering:** In `reviewUnit`, `setShowAnswers(false)` must execute BEFORE the `setViewState` that advances `currentIndex`. When keyboard shortcuts trigger grading (outside React's event batch context), the index advance synchronously re-renders and updates `activeSetShowAnswersRef.current` to the next card's setter. Calling `setShowAnswers(false)` first ensures the current card's override is reset.
 
-**Revisit Directives:** When a card is Forgotten, a `RevisitDirective` is inserted into the queue (at `forgotReinsertOffset` positions after current entry) so the card reappears later in the same session. LBL-Next cards use a separate `lblNextReinsertOffset`. Directives add DUPLICATE entries — cards are never removed from the queue.
+**Reinsert (Forgot / LBL-Next):** `reinsertCard(uid, afterIndex, offset)` is the single common function for both Forgot and LBL-Next reinserts. It splices a DUPLICATE entry into `primaryQueue` at `afterIndex + 1 + offset`. Pure queue operation — only adds a card and increases length. Decoupled from navigation; does not affect `currentIndex` or any other system. Cards are never removed from the queue.
 
 **Optimistic updates:** `reviewUnit` does optimistic facts update → setShowAnswers reset → focus advance → async save to Roam. `updateReviewConfigAction` optimistically updates `facts.latestByUid` and `cardMeta` before the async Roam write.
 
@@ -146,6 +146,6 @@ Do NOT remove `library.export: 'default'` from standalone config — Roam loads 
 - **No runtime backward compat.** Old data MUST migrate via Data Migration panel (Settings → Data Migration).
 - **`resolveBaseForCalculation`** must be called before scheduling math on same-day re-reviews, or intervals inflate.
 - **`hasCloze` is derived from block data** (children or `{...}` in text), not from DOM. Do not add a useState + useEffect for it — the `init=true` pattern was replaced with pure derivation.
-- **`setShowAnswers(false)` MUST precede `advancePrimaryQueue()`** in `reviewUnit`. Reordering them causes the wrong card's showAnswers override to be reset when keyboard shortcuts fire grading (Blueprint's global event listeners are outside React's batch context), breaking showAnswers for reinserted Forgot cards.
+- **`setShowAnswers(false)` MUST precede `currentIndex` advance** in `reviewUnit`. Reordering them causes the wrong card's showAnswers override to be reset when keyboard shortcuts fire grading (Blueprint's global event listeners are outside React's batch context), breaking showAnswers for reinserted Forgot cards.
 - **Standalone output:** The `standalone.js` bundle also gets the `@blueprintjs` externals — ensure CDN script tags include Blueprint for roam/js users.
 - **React 17:** Project uses React 17 + Blueprint 3.x. Do not upgrade without verifying `@blueprintjs/select` v3 compatibility.

@@ -20,7 +20,6 @@ import {
   getSessionAlgorithm,
 } from '~/models/session';
 import { getLblQueueState } from '~/models/practice';
-import { RevisitDirective } from '~/review-runtime/types';
 
 export const shouldReinsertLblCard = ({
   currentChildIndex,
@@ -37,8 +36,6 @@ interface UseLineByLineReviewInput {
   childUidsList: string[];
   isLBLReviewMode: boolean;
   hasLoadedChildSessionsForCurrentCard: boolean;
-  /** @deprecated no longer used — kept for interface compatibility */
-  revisitDirectives?: RevisitDirective[];
   algorithm: SchedulingAlgorithm;
   focusedChildUid?: string;
   setFocusedChildUid: (_uid?: string) => void;
@@ -86,7 +83,6 @@ export default function useLineByLineReview({
   isLBLReviewMode,
   hasLoadedChildSessionsForCurrentCard,
   algorithm,
-  /** @deprecated */ revisitDirectives: _revisitDirectives,
   focusedChildUid,
   setFocusedChildUid,
   setMaxVisitedChildIndex,

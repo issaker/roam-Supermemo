@@ -31,9 +31,9 @@ import {
  *   Cards are NEVER removed from the primaryQueue after grading.
  *
  *   The queue is built ONCE at session start from today's dueUids + newUids.
- *   Forgot and LBL-Next reinserts add DUPLICATE entries at later positions,
- *   but they never REMOVE the original entry.  Navigation is purely
- *   index-based: after each review, currentIndex++.
+ *   Forgot and LBL-Next reinserts splice DUPLICATE entries directly into
+ *   the queue state, but they never REMOVE the original entry.  Navigation
+ *   is purely index-based: after each review, currentIndex++.
  *
  *   DO NOT derive the queue from deriveDeckSnapshot or latestByUid on
  *   every mutation.  That was the cause of the "queue jumps to 0/51" bug:
@@ -50,14 +50,14 @@ import {
  *
  * Architecture:
  *   1. SessionFacts (facts.latestByUid) — one session per uid
- *   2. ViewState — currentIndex into the static primary queue + navigation state
- *   3. primaryQueue — STATIC array generated once at session start
+ *   2. primaryQueue — state, built from initialUids, only grows via reinserts
+ *   3. ViewState — currentIndex into the queue + child focus state
  */
 import {
   deriveChildSessionMap,
   deriveDeckSnapshot,
 } from './selectors';
-import { RevisitDirective, ReviewViewState, SessionFacts } from './types';
+import { ReviewViewState, SessionFacts } from './types';
 
 const mergeSourceIntoFacts = ({
   currentFacts,
@@ -98,46 +98,67 @@ export const useReviewRuntime = ({
   });
   const [viewState, setViewState] = React.useState<ReviewViewState>({
     currentIndex: 0,
-    previousPrimaryUid: undefined,
     focusedChildUid: undefined,
-    revisitDirectives: [],
     maxVisitedChildIndex: 0,
   });
-  const directiveIdRef = React.useRef(0);
 
   // ── incoming data sync ──
   React.useEffect(() => {
     setFacts((prev) => mergeSourceIntoFacts({ currentFacts: prev, incoming: practiceData }));
   }, [practiceData]);
 
-  // ── static primary queue ──
-  // Generated once from today's dueUids + newUids.  NEVER removes cards.
-  // Only revisit directives add duplicate entries for Forgot / LBL-Next.
+  // ── primary queue ──
+  // Generated once from today's dueUids + newUids.  Cards are never removed.
+  // Reinserts (Forgot / LBL-Next) splice duplicate entries directly into
+  // this state array via reinsertCard.
   const initialUids = React.useMemo(() => {
     const tagData = today.tags[selectedTag];
     if (!tagData) return [];
     return [...(tagData.dueUids || []), ...(tagData.newUids || [])];
   }, [today, selectedTag]);
 
-  const primaryQueue = React.useMemo(() => {
-    // Start with the initial queue, then apply revisit directives in order.
-    // Each directive inserts a duplicate entry at its recorded insertAtIndex.
-    return viewState.revisitDirectives.reduce(
-      (acc, directive) => {
-        const insertAt = Math.min(directive.insertAtIndex, acc.length);
-        const next = [...acc];
-        next.splice(insertAt, 0, directive.primaryUid);
-        return next;
-      },
-      [...initialUids]
-    );
-  }, [initialUids, viewState.revisitDirectives]);
+  const [primaryQueue, setPrimaryQueue] = React.useState<RecordUid[]>([]);
 
-  // Reset index + directives when the base queue COMPOSITION changes
-  // (different set of cards, e.g. tag switch or new session).
-  // Key is based on SORTED UIDs so that ORDER changes (from
-  // sortNormalDueCardUids after undo or review) don't trigger a reset —
-  // order changes are handled by the primaryQueue useMemo automatically.
+  // Sync primaryQueue with initialUids.
+  // - On composition change (different set of uids): rebuild from scratch.
+  //   currentIndex is reset to 0 by the initialUidsKey effect below.
+  // - On order-only change (same uids, different sort): reorder preserving
+  //   duplicate insertions at their relative positions.
+  React.useEffect(() => {
+    setPrimaryQueue((prev) => {
+      if (prev.length === 0) return [...initialUids];
+
+      const newSet = new Set(initialUids);
+      const prevSet = new Set(prev);
+      const sameComposition =
+        newSet.size === prevSet.size &&
+        Array.from(newSet).every((uid) => prevSet.has(uid));
+
+      if (!sameComposition) return [...initialUids];
+
+      // Order change only — reorder to match new initialUids while
+      // preserving inserted duplicates after their corresponding originals.
+      const result = [...initialUids];
+      const newCount = new Map<string, number>();
+      for (const uid of initialUids) newCount.set(uid, (newCount.get(uid) || 0) + 1);
+
+      const seenInOld = new Map<string, number>();
+      for (const uid of prev) {
+        const count = (seenInOld.get(uid) || 0) + 1;
+        seenInOld.set(uid, count);
+        if (count > (newCount.get(uid) || 0)) {
+          const lastIdx = result.lastIndexOf(uid);
+          result.splice(lastIdx + 1, 0, uid);
+        }
+      }
+      return result;
+    });
+  }, [initialUids]);
+
+  // Reset index when the base queue COMPOSITION changes (e.g. tag switch).
+  // Key is based on SORTED UIDs so that ORDER changes from
+  // sortNormalDueCardUids (after undo or review) don't trigger a reset —
+  // order changes are handled by the queue sync effect above.
   const initialUidsKey = React.useMemo(
     () => Array.from(new Set(initialUids)).sort().join(','),
     [initialUids]
@@ -145,9 +166,7 @@ export const useReviewRuntime = ({
   React.useEffect(() => {
     setViewState({
       currentIndex: 0,
-      previousPrimaryUid: undefined,
       focusedChildUid: undefined,
-      revisitDirectives: [],
       maxVisitedChildIndex: 0,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,36 +200,36 @@ export const useReviewRuntime = ({
 
   const currentPrimaryEntryId = focusedPrimary.entry?.id;
 
+  // ── reinsert: common function for Forgot and LBL-Next ──
+  // Pure queue operation — splices a duplicate entry at afterIndex+1+offset.
+  // Does NOT affect navigation or any other system.
+  const reinsertCard = React.useCallback(
+    (uid: RecordUid, afterIndex: number, offset: number) => {
+      setPrimaryQueue((prev) => {
+        const insertAt = Math.min(afterIndex + 1 + offset, prev.length);
+        const next = [...prev];
+        next.splice(insertAt, 0, uid);
+        return next;
+      });
+    },
+    []
+  );
+
   // ── navigation ──
+  // Pure index-based.  After reviewUnit advances currentIndex by 1,
+  // pressing left (offset=-1) returns to currentIndex-1, which is always
+  // the just-reviewed card (cards are never removed from the queue).
   const focusPrimaryByOffset = React.useCallback(
     (offset: number) => {
-      if (offset < 0) {
-        // First left click after a review: go back to the just-reviewed card.
-        if (
-          viewState.previousPrimaryUid &&
-          currentCardRefUid !== viewState.previousPrimaryUid
-        ) {
-          const prevIndex = primaryQueue.indexOf(viewState.previousPrimaryUid);
-          if (prevIndex >= 0) {
-            setViewState((prev) => ({
-              ...prev,
-              currentIndex: prevIndex,
-              previousPrimaryUid: undefined,
-            }));
-            return;
-          }
+      setViewState((prev) => {
+        const newIndex = prev.currentIndex + offset;
+        if (newIndex >= 0 && newIndex < primaryQueue.length) {
+          return { ...prev, currentIndex: newIndex };
         }
-      }
-
-      const newIndex = viewState.currentIndex + offset;
-      if (newIndex >= 0 && newIndex < primaryQueue.length) {
-        setViewState((prev) => ({
-          ...prev,
-          currentIndex: newIndex,
-        }));
-      }
+        return prev;
+      });
     },
-    [viewState.currentIndex, viewState.previousPrimaryUid, currentCardRefUid, primaryQueue]
+    [primaryQueue.length]
   );
 
   const setFocusedPrimaryUid = React.useCallback(
@@ -248,43 +267,6 @@ export const useReviewRuntime = ({
       maxVisitedChildIndex: Math.max(prev.maxVisitedChildIndex, index),
     }));
   }, []);
-
-  // ── revisit directive helpers ──
-  const createRevisitDirective = React.useCallback(
-    (uid: RecordUid, offset: number, reason: 'forgot' | 'lbl-next'): RevisitDirective => {
-      const currentIndex = viewState.currentIndex;
-      const directive: RevisitDirective = {
-        id: `${reason}:${directiveIdRef.current++}`,
-        primaryUid: uid,
-        insertAtIndex: currentIndex + 1 + offset,
-        reason,
-      };
-      return directive;
-    },
-    [viewState.currentIndex]
-  );
-
-  const addRevisitDirective = React.useCallback(
-    (uid: RecordUid, offset: number, reason: 'forgot' | 'lbl-next') => {
-      const directive = createRevisitDirective(uid, offset, reason);
-      setViewState((prev) => ({
-        ...prev,
-        revisitDirectives: [...prev.revisitDirectives, directive],
-      }));
-      return directive;
-    },
-    [createRevisitDirective]
-  );
-
-  const removeRevisitDirectives = React.useCallback(
-    (predicate: (directive: RevisitDirective) => boolean) => {
-      setViewState((prev) => ({
-        ...prev,
-        revisitDirectives: prev.revisitDirectives.filter((d) => !predicate(d)),
-      }));
-    },
-    []
-  );
 
   // ── facts mutation helpers ──
   const setPendingState = React.useCallback(
@@ -353,8 +335,8 @@ export const useReviewRuntime = ({
   //
   // After computing the practice result:
   //   1. Update facts (optimistic)
-  //   2. Handle revisit directives (Forgot / LBL-Next reinserts)
-  //   3. Advance currentIndex by 1
+  //   2. Handle reinsert (Forgot / LBL-Next) via reinsertCard
+  //   3. Reset showAnswers, then advance currentIndex by 1
   //
   // Cards stay in the queue.  The queue is NOT rebuilt after mutation.
   const reviewUnit = React.useCallback(
@@ -473,40 +455,26 @@ export const useReviewRuntime = ({
         }
       }
 
-      // ── 3. Handle reinsert directives (Forgot / LBL-Next) ──
+      // ── 3. Handle reinsert (Forgot / LBL-Next) + advance ──
       const isForgot = grade === 0;
 
-      // Advance the primary queue index.  Extracted to a single helper so
-      // all three branches (normal, LBL-Forgot, LBL-Next/complete) stay in
-      // sync — duplicating setViewState inline caused bugs in the past when
-      // one branch was updated but others were not.
-      const advancePrimaryQueue = () => {
-        setViewState((prev) => ({
-          ...prev,
-          previousPrimaryUid: currentCardRefUid,
-          currentIndex: prev.currentIndex + 1,
-        }));
-      };
-
-      // setShowAnswers(false) must precede advancePrimaryQueue() so the
+      // setShowAnswers(false) MUST precede currentIndex advance so the
       // current card's override is reset before any synchronous re-render
-      // (e.g. from keyboard shortcuts outside React's batch context) updates
-      // activeSetShowAnswersRef to point to the next card.  Otherwise the
-      // reinserted card reappears with a stale showAnswers=true override.
+      // updates activeSetShowAnswersRef to point to the next card.
       if (!isChild) {
         // Normal card: Forgot with offset → reinsert this card later
         if (isForgot && forgotReinsertOffset > 0) {
-          addRevisitDirective(targetUid, forgotReinsertOffset, 'forgot');
+          reinsertCard(targetUid, viewState.currentIndex, forgotReinsertOffset);
         }
         setShowAnswers(false);
-        advancePrimaryQueue();
+        setViewState((prev) => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
       } else if (isForgot) {
         // LBL child Forgot: reinsert PARENT card later, advance queue
         if (forgotReinsertOffset > 0) {
-          addRevisitDirective(parentUid!, forgotReinsertOffset, 'forgot');
+          reinsertCard(parentUid!, viewState.currentIndex, forgotReinsertOffset);
         }
         setShowAnswers(false);
-        advancePrimaryQueue();
+        setViewState((prev) => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
       } else {
         // LBL child non-Forgot: advance within children or complete card.
         const childList = childUidsList!;
@@ -525,10 +493,10 @@ export const useReviewRuntime = ({
           lineByLineCurrentChildIndex! < childList.length - 1
         ) {
           // LBL-Next: reinsert parent card later, advance queue
-          addRevisitDirective(parentUid!, lblNextReinsertOffset!, 'lbl-next');
-          advancePrimaryQueue();
+          reinsertCard(parentUid!, viewState.currentIndex, lblNextReinsertOffset!);
+          setViewState((prev) => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
         } else if (isCardComplete) {
-          advancePrimaryQueue();
+          setViewState((prev) => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
         } else {
           // Stay on this parent card, advance within children
           // No primary queue navigation
@@ -539,8 +507,6 @@ export const useReviewRuntime = ({
       }
 
       // ── 4. Persist to Roam ──
-      // savePracticeData and updateParentNextDueDate are independent —
-      // run them in parallel to reduce latency on each review.
       try {
         const persists: Promise<void>[] = [
           savePracticeData({
@@ -570,11 +536,11 @@ export const useReviewRuntime = ({
       isCramming,
       dataPageTitle,
       facts.latestByUid,
-      currentCardRefUid,
+      viewState.currentIndex,
       setPendingState,
       upsertLatestSession,
       upsertLatestSessions,
-      addRevisitDirective,
+      reinsertCard,
       setFocusedChildUid,
       setMaxVisitedChildIndex,
       clearPendingState,
@@ -598,12 +564,6 @@ export const useReviewRuntime = ({
         algorithm,
         interaction,
         childSessionData,
-        // ARCHITECTURE NOTE — applyOptimisticCardMeta and cardMeta are
-        // technically redundant: upsertLatestSession already updates
-        // facts.latestByUid, which is the single source of truth for
-        // cardMeta (via useCurrentCardData's derivedCardMeta).  Keeping
-        // them because removing would require verifying all call sites,
-        // but future cleanup should derive cardMeta purely from facts.
         applyOptimisticCardMeta,
         cardMeta,
       } = args;
@@ -664,29 +624,7 @@ export const useReviewRuntime = ({
     setFocusedChildUid,
     resetChildViewState,
     setMaxVisitedChildIndex,
-    addRevisitDirective,
-    createRevisitDirective: (args: {
-      primaryUid: RecordUid;
-      anchorEntryId: string;
-      offset: number;
-      reason: 'forgot' | 'lbl-next';
-    }) => createRevisitDirective(args.primaryUid, args.offset, args.reason),
-    setRevisitDirectives: (
-      directivesOrUpdater: RevisitDirective[] | ((prev: RevisitDirective[]) => RevisitDirective[])
-    ) => {
-      if (typeof directivesOrUpdater === 'function') {
-        setViewState((prev) => ({
-          ...prev,
-          revisitDirectives: directivesOrUpdater(prev.revisitDirectives),
-        }));
-      } else {
-        setViewState((prev) => ({
-          ...prev,
-          revisitDirectives: directivesOrUpdater,
-        }));
-      }
-    },
-    removeRevisitDirectives,
+    reinsertCard,
     setPendingState,
     clearPendingState,
     upsertLatestSession,

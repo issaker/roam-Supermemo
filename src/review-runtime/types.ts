@@ -3,12 +3,12 @@
  *
  * The runtime has exactly two kinds of mutable state:
  *   1. SessionFacts  — one latest session per uid (source of truth)
- *   2. ViewState     — where the user is looking and what's been reviewed
+ *   2. ViewState     — where the user is looking
  *
- * The primary queue is a STATIC array generated once at session start.
+ * The primary queue is state, built once at session start from initialUids.
  * Cards are never removed from the queue after grading.  The only
- * modifications are Forgot and LBL-Next reinserts (duplicate entries).
- * Navigation is purely index-based.
+ * modifications are reinserts (Forgot / LBL-Next) which splice duplicate
+ * entries directly into the queue.  Navigation is purely index-based.
  */
 import { Today } from '~/models/practice';
 import { NewSession, RecordUid, Session } from '~/models/session';
@@ -18,13 +18,6 @@ export type LatestSessionRecord = Session | NewSession | undefined;
 export type SessionFacts = {
   latestByUid: Record<RecordUid, LatestSessionRecord>;
   pendingByUid: Record<RecordUid, 'saving' | 'undoing' | 'updatingConfig' | undefined>;
-};
-
-export type RevisitDirective = {
-  id: string;
-  primaryUid: RecordUid;
-  insertAtIndex: number;
-  reason: 'forgot' | 'lbl-next';
 };
 
 export type DeckSnapshot = {
@@ -44,8 +37,6 @@ export type DeckSnapshot = {
 
 export type ReviewViewState = {
   currentIndex: number;
-  previousPrimaryUid?: RecordUid;
   focusedChildUid?: RecordUid;
-  revisitDirectives: RevisitDirective[];
   maxVisitedChildIndex: number;
 };
