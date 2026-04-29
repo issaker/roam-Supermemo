@@ -59,20 +59,6 @@ const baseConfig = {
 // to UMD — that will break Extension Settings loading. DO NOT remove
 // standalone.js — roam/js users need it.
 //
-// GITHUB RAW URL WARNING:
-// GitHub raw (raw.githubusercontent.com) serves .js files as
-// Content-Type: text/plain with x-content-type-options: nosniff.
-// Browsers will REFUSE to execute text/plain as a <script>.
-// This is NOT a build issue — the file is correct. Users loading
-// from GitHub raw URLs MUST use fetch()+eval() in their roam/js
-// block instead of a plain <script> tag:
-//
-//   fetch('https://...standalone.js')
-//     .then(r => r.text()).then(code => eval(code))
-//     .then(() => window.RoamMemo.onload({...}))
-//
-// Alternatively, use a CDN (jsDelivr, etc.) that serves proper MIME.
-//
 module.exports = [
   {
     ...baseConfig,
