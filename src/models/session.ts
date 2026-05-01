@@ -41,6 +41,8 @@
  *   only stores algorithm, interaction, and nextDueDate (computed from children).
  */
 
+import * as dateUtils from '~/utils/date';
+
 interface SessionCommon {
   nextDueDate?: Date;
   dateCreated?: Date;
@@ -159,14 +161,20 @@ export const isSessionDue = (
   session: Pick<Session, 'nextDueDate'> | undefined,
   now = new Date()
 ): boolean => {
-  return !session?.nextDueDate || session.nextDueDate <= now;
+  if (!session?.nextDueDate) return true;
+  const dueDate = dateUtils.normalizeToDay(session.nextDueDate);
+  const today = dateUtils.normalizeToDay(now);
+  return dueDate <= today;
 };
 
 export const isSessionMastered = (
   session: Pick<Session, 'nextDueDate'> | undefined,
   now = new Date()
 ): boolean => {
-  return !!session?.nextDueDate && session.nextDueDate > now;
+  if (!session?.nextDueDate) return false;
+  const dueDate = dateUtils.normalizeToDay(session.nextDueDate);
+  const today = dateUtils.normalizeToDay(now);
+  return dueDate > today;
 };
 
 export type ReviewStatus = 'new' | 'dueToday' | 'scheduled' | 'pastDue';

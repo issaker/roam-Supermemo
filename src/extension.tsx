@@ -13,7 +13,7 @@
  *   1. Provides a working getAll/set/get even without Roam Depot's extensionAPI
  *   2. Overlays in-memory values ON TOP of any existing extensionAPI values,
  *      so inMemorySettings always takes precedence (handles roam/js cold start)
- *   3. Dispatches 'roamMemoSettingsChanged' event on every set(), which
+ *   3. Dispatches 'roamSupermemoSettingsChanged' event on every set(), which
  *      useSettings hook listens to for re-syncing React state
  *   4. Falls through to original extensionAPI methods when available (Roam Depot)
  *
@@ -26,7 +26,7 @@ import App from './app';
 import { FocusStyleManager } from '@blueprintjs/core';
 import { injectZIndexFixStyles, removeZIndexFixStyles } from './utils/zIndexFix';
 
-const container_id: string = 'roam-memo-wrapper';
+const container_id: string = 'roam-Supermemo-wrapper';
 
 const createAndRenderContainer = () => {
   const siblingElm = document.querySelector('.rm-left-sidebar__daily-notes');
@@ -65,7 +65,9 @@ function onload({ extensionAPI }: { extensionAPI: any }) {
     compatibleExtensionAPI.settings.set = (key: string, value: any) => {
       inMemorySettings[key] = value;
       if (originalSet) originalSet(key, value);
-      window.dispatchEvent(new CustomEvent('roamMemoSettingsChanged', { detail: { key, value } }));
+      window.dispatchEvent(
+        new CustomEvent('roamSupermemoSettingsChanged', { detail: { key, value } })
+      );
     };
 
     compatibleExtensionAPI.settings.get = (key: string) => {
@@ -73,7 +75,7 @@ function onload({ extensionAPI }: { extensionAPI: any }) {
       return originalGet ? originalGet(key) : undefined;
     };
 
-    window.roamMemo = {
+    window.roamSupermemo = {
       extensionAPI: compatibleExtensionAPI,
     };
 
@@ -118,7 +120,7 @@ const plugin = {
 //
 // Dual export for two loading mechanisms, served by TWO separate files:
 //   export default → used when loaded as ES module (Roam Depot)
-//   window.RoamMemo → used when loaded via <script> tag (roam/js)
+//   window.RoamSupermemo → used when loaded via <script> tag (roam/js)
 //
 // The webpack build produces two output files from this same source:
 //   extension.js (ES module)  → for Roam Depot dynamic import()
@@ -134,5 +136,5 @@ const plugin = {
 export default plugin;
 
 if (typeof window !== 'undefined') {
-  (window as any).RoamMemo = plugin;
+  (window as any).RoamSupermemo = plugin;
 }

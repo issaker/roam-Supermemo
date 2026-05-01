@@ -1,0 +1,7 @@
+- [x] 冗余代码与死代码识别完成：subtractDays（生产代码零引用）、fromNow（1处调用可内联）、createBlockOnPage（1处调用可内联）、constants.ts（2文件使用保留合理）、debounce（功能不同非重复）
+- [x] 重复逻辑识别完成：DeckConfig JSON解析6处（回退值不一致）、导航按钮样式8组重复、Selector渲染模式结构相似内容差异大、SelectorItemWrapper共享::before高亮模式、日期归一化逻辑完全一致
+- [x] 模块耦合分析完成：PracticeSessionContext 16字段（God Context）、PracticeOverlay 977行6+职责、Footer 1121行12子组件、limitRemainingPracticeData 263行嵌套循环、queries/data.ts 788行混合职责、App.tsx 8 Hook 10关注点
+- [x] 类型安全评估完成：35处:any类型注解（11文件）、63处as断言（42 as Type + 21 as any）、20个导出函数参数无类型
+- [x] 测试覆盖率评估完成：10个测试文件、约20%源文件有覆盖、5/6核心函数无测试（仅generatePracticeData有测试）
+- [x] 优化建议优先级排序完成：15项建议分高/中/低三级，含实施难度和预期收益评估
+- [x] 最终分析报告已生成，包含是否需要优化的明确结论和分阶段实施建议

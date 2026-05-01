@@ -7,7 +7,7 @@ const SETTINGS_BLOCK_NAME = 'settings';
  * Settings Page Persistence — Roam Data Page Read/Write
  *
  * This module handles reading and writing settings as blocks on the Roam data
- * page (default: roam/memo). It is a LOW-LEVEL persistence layer called by
+ * page (default: roam/Supermemo). It is a LOW-LEVEL persistence layer called by
  * useSettings; it should NOT be called directly from UI components.
  *
  * Role in the settings architecture:
@@ -28,7 +28,7 @@ export const saveSettingsToPage = async (dataPageTitle: string, settings: Settin
   try {
     // Ensure the data page exists
     await getOrCreatePage(dataPageTitle);
-    
+
     // Get or create the settings block
     const settingsBlockUid = await getOrCreateBlockOnPage(dataPageTitle, SETTINGS_BLOCK_NAME, -1, {
       open: false,
@@ -57,7 +57,7 @@ export const saveSettingsToPage = async (dataPageTitle: string, settings: Settin
         const existingBlockUid = await getChildBlock(settingsBlockUid, `${key}::`, {
           exactMatch: false,
         });
-        
+
         if (existingBlockUid) {
           await window.roamAlphaAPI.deleteBlock({ block: { uid: existingBlockUid } });
         }
@@ -88,7 +88,7 @@ export const loadSettingsFromPage = async (dataPageTitle: string): Promise<Setti
   try {
     // Get the page UID
     const pageUid = await getOrCreatePage(dataPageTitle);
-    
+
     if (!pageUid) {
       return null;
     }
@@ -113,15 +113,15 @@ export const loadSettingsFromPage = async (dataPageTitle: string): Promise<Setti
        [?child :block/string ?child-string]
       ]
     `;
-    
+
     const results = window.roamAlphaAPI.q(childrenQuery);
-    
+
     if (!results || results.length === 0) {
       return null;
     }
 
     const loadedSettings: Partial<Settings> = {};
-    
+
     // Parse each setting
     for (const [blockUid, blockString] of results) {
       try {
@@ -129,7 +129,7 @@ export const loadSettingsFromPage = async (dataPageTitle: string): Promise<Setti
           const [keyPart, ...valueParts] = blockString.split('::');
           const key = keyPart.trim();
           const value = valueParts.join('::').trim();
-          
+
           // Convert values to appropriate types
           switch (key) {
             case 'deckConfigs':

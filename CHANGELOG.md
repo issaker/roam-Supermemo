@@ -1,3 +1,3 @@
 ### Changelog
 
-See [git log](https://github.com/digitalmaster/roam-memo/commits) for version history.
+See [git log](https://github.com/issaker/roam-Supermemo/commits) for version history.

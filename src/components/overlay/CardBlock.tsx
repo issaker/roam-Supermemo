@@ -194,13 +194,17 @@ const CardBlock = ({
         observerRef.current = null;
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forceUpdate, autoExpand, handleBlockBlur, onRenderComplete]);
 
   return (
     <div>
       {breadcrumbs && showBreadcrumbs && <Breadcrumbs breadcrumbs={breadcrumbs} />}
-      <ContentWrapper ref={ref} showAnswers={showAnswers} hideChildren={hideChildren}></ContentWrapper>
+      <ContentWrapper
+        ref={ref}
+        showAnswers={showAnswers}
+        hideChildren={hideChildren}
+      ></ContentWrapper>
     </div>
   );
 };
@@ -215,7 +219,7 @@ const ContentWrapper = styled.div<{
   width: calc(100% + 19px);
 
   & .rm-block-children {
-    display: ${(props) => (props.showAnswers && !props.hideChildren) ? 'flex' : 'none'};
+    display: ${(props) => (props.showAnswers && !props.hideChildren ? 'flex' : 'none')};
   }
 
   & .rm-block-separator {
@@ -224,7 +228,7 @@ const ContentWrapper = styled.div<{
 
   // Only apply cloze hiding to custom clozes with {} syntax
   // Roam's native ^^ highlighting (.rm-highlight) keeps its default styles
-  .roam-memo-cloze {
+  .roam-Supermemo-cloze {
     background-color: ${(props) => (props.showAnswers ? colors.clozeVisible : colors.clozeHidden)};
     color: ${(props) => (props.showAnswers ? 'inherit' : 'transparent')};
     overflow: hidden;

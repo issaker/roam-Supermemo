@@ -31,7 +31,7 @@ export const mockQueryResult = ({ queryMocks, settingsMock, tagsList }) => {
 };
 
 const mockOtherDependencies = ({ settingsMock }) => {
-  Object.defineProperty(window, 'roamMemo', {
+  Object.defineProperty(window, 'roamSupermemo', {
     value: {
       extensionAPI: {
         settings: {
@@ -46,7 +46,7 @@ const mockOtherDependencies = ({ settingsMock }) => {
   });
 };
 
-export const dataPageTitle = 'roam/memo';
+export const dataPageTitle = 'roam/Supermemo';
 const dataPageUid = 1234;
 const undefinedDataPageUid = '';
 const mockBlockInfo = {
@@ -75,7 +75,7 @@ export const generateMockRoamAlphaAPI = ({
   q: jest.fn((q, ...queryArgs) => {
     const defaultMocks: MockQuery[] = [
       {
-        query: getDataPageQuery('roam/memo'),
+        query: getDataPageQuery('roam/Supermemo'),
         result: [[dataPageUid]],
         shouldReturnPromise: false,
       },
@@ -240,7 +240,7 @@ export class MockDataBuilder {
     const queryMocks: MockQuery[] = [];
 
     queryMocks.push({
-      query: getDataPageQuery('roam/memo'),
+      query: getDataPageQuery('roam/Supermemo'),
       result: [],
       shouldReturnPromise: false,
     });
@@ -319,7 +319,13 @@ export class MockDataBuilder {
     return {
       ...defaultSettings,
       ...this.settingsOverride,
-      deckConfigs: JSON.stringify(this.tags.map((name) => ({ name, swapQA: false, weight: Math.round(100 / this.tags.length) }))),
+      deckConfigs: JSON.stringify(
+        this.tags.map((name) => ({
+          name,
+          swapQA: false,
+          weight: Math.round(100 / this.tags.length),
+        }))
+      ),
       isCramming: false,
     };
   }

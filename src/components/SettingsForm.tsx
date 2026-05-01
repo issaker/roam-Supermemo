@@ -1,7 +1,8 @@
 import * as React from 'react';
 import { colors } from '~/theme';
-import { Settings, DeckConfig } from '~/hooks/useSettings';
+import { Settings } from '~/hooks/useSettings';
 import { equalizeWeights } from '~/utils/deckWeight';
+import { parseDeckConfigs } from '~/utils/deckConfig';
 import DeckConfigsTable from '~/components/DeckConfigsTable';
 
 export type SettingsFormSettings = Omit<Settings, 'historyCleanupKeepCount' | 'showBreadcrumbs'>;
@@ -150,7 +151,7 @@ const SettingsForm = React.forwardRef<SettingsFormHandle, SettingsFormProps>(
               const value = e.target.value;
               setFormSettings((prev) => ({ ...prev, dataPageTitle: value }));
             }}
-            placeholder="roam/memo"
+            placeholder="roam/Supermemo"
             style={{ width: '100%' }}
           />
         </div>
@@ -164,12 +165,7 @@ const SettingsForm = React.forwardRef<SettingsFormHandle, SettingsFormProps>(
               onChange={(e) => {
                 const value = e.target.checked;
                 setFormSettings((prev) => {
-                  let updatedConfigs: DeckConfig[];
-                  try {
-                    updatedConfigs = JSON.parse(prev.deckConfigs);
-                  } catch {
-                    updatedConfigs = [];
-                  }
+                  let updatedConfigs = parseDeckConfigs(prev.deckConfigs);
 
                   if (value) {
                     const hasDailyNote = updatedConfigs.some((d) => d.name === 'DailyNote');

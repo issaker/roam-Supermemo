@@ -1,16 +1,9 @@
 import * as React from 'react';
-import { DeckConfig } from '~/hooks/useSettings';
+import { parseDeckConfigNames } from '~/utils/deckConfig';
 
 const useTags = ({ deckConfigs }: { deckConfigs: string }) => {
   const buildTagsList = React.useCallback((str: string) => {
-    let parsed: string[];
-    try {
-      const configs: DeckConfig[] = JSON.parse(str);
-      parsed = configs.map((c) => c.name);
-    } catch {
-      parsed = ['memo'];
-    }
-    return parsed;
+    return parseDeckConfigNames(str);
   }, []);
 
   const [tagsList, setTagsList] = React.useState<string[]>(buildTagsList(deckConfigs));

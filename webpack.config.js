@@ -52,7 +52,7 @@ const baseConfig = {
 //   - standalone.js → UMD for roam/js <script> tag
 //
 // The source code (src/extension.tsx) does BOTH `export default` AND
-// `window.RoamMemo = plugin`, but webpack's output format determines
+// `window.RoamSupermemo = plugin`, but webpack's output format determines
 // which loading mechanism actually works.
 //
 // DO NOT merge these into a single output. DO NOT switch extension.js
@@ -86,7 +86,7 @@ module.exports = [
       filename: 'standalone.js',
       path: __dirname,
       library: {
-        name: 'RoamMemo',
+        name: 'RoamSupermemo',
         type: 'umd',
         export: 'default',
       },

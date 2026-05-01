@@ -2,16 +2,11 @@
  * review-runtime selectors
  *
  * Used for DISPLAY state (deckSnapshot) and utility queries.
- * Queue derivation is handled by the static queue in
- * useReviewRuntime.ts — cards are never removed from the queue.
+ * Queue derivation is handled by the queue sync logic in
+ * useReviewRuntime.ts — completed cards are removed on data refresh.
  */
 import { sortNormalDueCardUids, Today } from '~/models/practice';
-import {
-  isSessionMastered,
-  Records,
-  RecordUid,
-  Session,
-} from '~/models/session';
+import { isSessionMastered, Records, RecordUid, Session } from '~/models/session';
 import * as dateUtils from '~/utils/date';
 import { DeckSnapshot, SessionFacts } from './types';
 

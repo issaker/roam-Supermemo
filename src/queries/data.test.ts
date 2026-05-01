@@ -63,13 +63,13 @@ describe('getPluginPageData', () => {
     });
 
     const result = await getPluginPageData({
-      dataPageTitle: 'roam/memo',
+      dataPageTitle: 'roam/Supermemo',
       limitToLatest: true,
     });
 
     expect(window.roamAlphaAPI.q).toHaveBeenCalledWith(
       getPluginPageBlockDataQuery,
-      'roam/memo',
+      'roam/Supermemo',
       'data'
     );
     expect(result['card-1']).toMatchObject({
@@ -116,7 +116,7 @@ describe('getPluginPageData', () => {
     });
 
     const result = await getPluginPageData({
-      dataPageTitle: 'roam/memo',
+      dataPageTitle: 'roam/Supermemo',
       limitToLatest: true,
     });
 
@@ -175,7 +175,7 @@ describe('getPluginPageData', () => {
     });
 
     const result = await getPluginPageData({
-      dataPageTitle: 'roam/memo',
+      dataPageTitle: 'roam/Supermemo',
       limitToLatest: true,
     });
 
@@ -243,7 +243,7 @@ describe('getPluginPageData', () => {
     });
 
     const result = await getPluginPageData({
-      dataPageTitle: 'roam/memo',
+      dataPageTitle: 'roam/Supermemo',
       limitToLatest: false,
     });
 
@@ -290,7 +290,7 @@ describe('getPluginPageData', () => {
     });
 
     const result = await getPluginPageData({
-      dataPageTitle: 'roam/memo',
+      dataPageTitle: 'roam/Supermemo',
       limitToLatest: true,
     });
 

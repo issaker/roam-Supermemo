@@ -151,7 +151,7 @@ const upsertLatestSessionField = async ({
  * Missing fields are backfilled from the latest existing session block,
  * preventing data loss when switching algorithms or after undo operations.
  */
-export const savePracticeData = async ({ refUid, dataPageTitle, dateCreated, ...data }) => {
+export const savePracticeData = async ({ refUid, dataPageTitle, dateCreated, ...data }: { refUid: string; dataPageTitle: string; dateCreated?: Date; [key: string]: any }) => {
   await getOrCreatePage(dataPageTitle);
   const dataBlockUid = await getOrCreateBlockOnPage(dataPageTitle, 'data', -1, {
     open: false,
@@ -248,15 +248,21 @@ export const savePracticeData = async ({ refUid, dataPageTitle, dateCreated, ...
  * Logic:
  *   - If any child block has no session or is due → nextDueDate = today
  *   - Otherwise → nextDueDate = earliest child nextDueDate
+ *
+ * When childSessions is provided (from the in-memory optimistic update),
+ * the Roam re-read is skipped, eliminating a race condition where a
+ * just-saved child session might not yet be visible to getChildSessionData.
  */
 export const updateParentNextDueDate = async ({
   refUid,
   childUids,
   dataPageTitle,
+  childSessions: childSessionsIn,
 }: {
   refUid: string;
   childUids: string[];
   dataPageTitle: string;
+  childSessions?: Record<string, any>;
 }) => {
   await getOrCreatePage(dataPageTitle);
   const dataBlockUid = await getOrCreateBlockOnPage(dataPageTitle, 'data', -1, {
@@ -268,7 +274,8 @@ export const updateParentNextDueDate = async ({
     open: false,
   });
 
-  const childSessions = await getChildSessionData({ childUids, dataPageTitle });
+  const childSessions = childSessionsIn ||
+    await getChildSessionData({ childUids, dataPageTitle });
 
   const now = new Date();
   const parentNextDueDate = deriveParentNextDueDateFromChildSessions(

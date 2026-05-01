@@ -1,10 +1,19 @@
 import * as React from 'react';
 import * as Blueprint from '@blueprintjs/core';
-import type { IconName, Intent } from '@blueprintjs/core';
-import * as BlueprintSelect from '@blueprintjs/select';
 import styled from '@emotion/styled';
 import * as asyncUtils from '~/utils/async';
-import * as dateUtils from '~/utils/date';
+
+const NavButton = styled.button<{ disabled?: boolean }>`
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  font-size: 22px;
+  line-height: 1;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  opacity: ${({ disabled }) => (disabled ? 0.3 : 1)};
+`;
 import { generatePracticeData } from '~/practice';
 import Tooltip from '~/components/Tooltip';
 import ButtonTags from '~/components/ButtonTags';
@@ -12,45 +21,22 @@ import {
   isFixedTimeAlgorithm,
   isGradingAlgorithm,
   SchedulingAlgorithm,
-  FixedTimeUnit,
   InteractionStyle,
-  ALGORITHM_META,
-  INTERACTION_META,
-  Session,
 } from '~/models/session';
 import { MainContext } from '~/components/overlay/PracticeOverlay';
-import { usePracticeSession } from '~/contexts/PracticeSessionContext';
-import { getIntentColor, colors } from '~/theme';
+import { useAlgorithmContext } from '~/hooks/useAlgorithmContext';
+import { colors } from '~/theme';
+import { ControlButton } from './ControlButton';
+import { AlgorithmSelector, InteractionSelector } from './FooterSelectors';
+import { FixedIntervalModeControls, SpacedIntervalModeControls } from './FixedIntervalEditor';
+import type { IntervalEstimates } from './FixedIntervalEditor';
 
-const formatDaysFromNow = (nextDueDate: Date | undefined): string => {
-  if (!nextDueDate) return '';
-  const days = dateUtils.daysBetween(new Date(), nextDueDate);
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Tomorrow';
-  return `${days} days`;
-};
-
-/**
- * IntervalEstimate inherits all algorithm fields from Session (sm2_*, progressive_*, fixed_*).
- * Design intent: full inheritance ensures that when users switch between algorithms, each
- * algorithm's historical data is carried forward without discontinuity. For example, when
- * switching from SM2 to Fixed and back to SM2, SM2's eFactor and repetitions are still
- * preserved, allowing interval calculation to continue from the correct position.
- * baseSessionData is excluded because interval preview does not need this nested field.
- */
-type IntervalEstimate = Omit<Session, 'baseSessionData'>;
-
-type IntervalEstimates =
-  | undefined
-  | {
-      [key: number]: IntervalEstimate;
-    };
 const Footer = ({
   setShowAnswers,
   showAnswers,
   refUid,
   onPracticeClick,
-  onSkipClick,
+  onNextClick,
   onPrevClick,
   isDone,
   hasCards,
@@ -64,7 +50,7 @@ const Footer = ({
   showAnswers: boolean;
   refUid: string | undefined;
   onPracticeClick: (_props: { sm2_grade?: number; refUid?: string }) => void;
-  onSkipClick: () => void;
+  onNextClick: () => void;
   onPrevClick: () => void;
   isDone: boolean;
   hasCards: boolean;
@@ -85,7 +71,7 @@ const Footer = ({
     onLineByLineNext,
   } = React.useContext(MainContext);
   const { algorithm: algorithmFromSession, interaction: interactionFromSession } =
-    usePracticeSession();
+    useAlgorithmContext();
 
   const [isIntervalEditorOpen, setIsIntervalEditorOpen] = React.useState(false);
 
@@ -134,12 +120,12 @@ const Footer = ({
     },
     [onPracticeClick, refUid]
   );
-  const skipFn = React.useMemo(
+  const nextFn = React.useMemo(
     () => () => {
-      const key = 'skip-button';
-      activateButtonFn(key, () => onSkipClick());
+      const key = 'next-button';
+      activateButtonFn(key, () => onNextClick());
     },
-    [onSkipClick]
+    [onNextClick]
   );
 
   const hotkeys = React.useMemo(
@@ -161,16 +147,10 @@ const Footer = ({
         },
       },
       {
-        combo: 'S',
-        global: true,
-        label: 'Skip',
-        onKeyDown: skipFn,
-      },
-      {
         combo: 'right',
         global: true,
-        label: 'Skip',
-        onKeyDown: skipFn,
+        label: 'Next',
+        onKeyDown: nextFn,
       },
       {
         combo: 'left',
@@ -178,7 +158,6 @@ const Footer = ({
         label: 'Previous',
         onKeyDown: onPrevClick,
       },
-      /** LBL secondary queue navigation: ↑/↓ navigate between child blocks */
       {
         combo: 'up',
         global: true,
@@ -233,7 +212,7 @@ const Footer = ({
       },
     ],
     [
-      skipFn,
+      nextFn,
       onPrevClick,
       showAnswers,
       showAnswerFn,
@@ -312,7 +291,7 @@ const Footer = ({
         ) : isLineByLine && lineByLineIsCardComplete ? (
           <LblCompletedControls
             onPrevClick={onPrevClick}
-            onNextClick={skipFn}
+            onNextClick={nextFn}
             onLineByLinePrev={onLineByLinePrev}
           />
         ) : isLearned ? (
@@ -329,7 +308,7 @@ const Footer = ({
         ) : (
           <GradingControlsWrapper
             activeButtonKey={activeButtonKey}
-            skipFn={skipFn}
+            nextFn={nextFn}
             gradeFn={gradeFn}
             intervalEstimates={intervalEstimates}
             intervalPractice={intervalPractice}
@@ -414,8 +393,8 @@ const CompletedTodayControls = ({
 };
 
 const LblCompletedControls = ({ onPrevClick, onNextClick, onLineByLinePrev }) => (
-  <div className="flex items-center gap-3">
-    <button
+  <div className="flex items-center justify-evenly w-full">
+    <NavButton
       type="button"
       aria-label="Previous"
       onClick={(e) => {
@@ -424,21 +403,10 @@ const LblCompletedControls = ({ onPrevClick, onNextClick, onLineByLinePrev }) =>
         onPrevClick();
       }}
       className="bp3-button bp3-minimal"
-      style={{
-        minWidth: '44px',
-        minHeight: '44px',
-        padding: '0 10px',
-        fontSize: '22px',
-        lineHeight: 1,
-        touchAction: 'manipulation',
-        WebkitTapHighlightColor: 'transparent',
-        border: '1px solid rgba(128, 128, 128, 0.25)',
-      }}
     >
       ◀
-    </button>
-    {/* LBL secondary queue navigation: ▲ navigates back to previous lines for re-review */}
-    <button
+    </NavButton>
+    <NavButton
       type="button"
       aria-label="Previous Line"
       onClick={(e) => {
@@ -447,40 +415,14 @@ const LblCompletedControls = ({ onPrevClick, onNextClick, onLineByLinePrev }) =>
         onLineByLinePrev?.();
       }}
       className="bp3-button bp3-minimal"
-      style={{
-        minWidth: '44px',
-        minHeight: '44px',
-        padding: '0 10px',
-        fontSize: '22px',
-        lineHeight: 1,
-        touchAction: 'manipulation',
-        WebkitTapHighlightColor: 'transparent',
-        border: '1px solid rgba(128, 128, 128, 0.25)',
-      }}
     >
       ▲
-    </button>
+    </NavButton>
     <span className="text-sm opacity-60">All lines reviewed</span>
-    <button
-      type="button"
-      aria-label="Next Line"
-      disabled
-      className="bp3-button bp3-minimal"
-      style={{
-        minWidth: '44px',
-        minHeight: '44px',
-        padding: '0 10px',
-        fontSize: '22px',
-        lineHeight: 1,
-        touchAction: 'manipulation',
-        WebkitTapHighlightColor: 'transparent',
-        opacity: 0.3,
-        border: '1px solid rgba(128, 128, 128, 0.25)',
-      }}
-    >
+    <NavButton type="button" aria-label="Next Line" disabled className="bp3-button bp3-minimal">
       ▼
-    </button>
-    <button
+    </NavButton>
+    <NavButton
       type="button"
       aria-label="Next"
       onClick={(e) => {
@@ -489,25 +431,15 @@ const LblCompletedControls = ({ onPrevClick, onNextClick, onLineByLinePrev }) =>
         onNextClick();
       }}
       className="bp3-button bp3-minimal"
-      style={{
-        minWidth: '44px',
-        minHeight: '44px',
-        padding: '0 10px',
-        fontSize: '22px',
-        lineHeight: 1,
-        touchAction: 'manipulation',
-        WebkitTapHighlightColor: 'transparent',
-        border: '1px solid rgba(128, 128, 128, 0.25)',
-      }}
     >
       ▶
-    </button>
+    </NavButton>
   </div>
 );
 
 const GradingControlsWrapper = ({
   activeButtonKey,
-  skipFn,
+  nextFn,
   gradeFn,
   intervalEstimates,
   intervalPractice,
@@ -515,7 +447,7 @@ const GradingControlsWrapper = ({
   toggleIntervalEditorOpen,
   onPrevClick,
 }) => {
-  const { algorithm, interaction, onSelectAlgorithm, onSelectInteraction } = usePracticeSession();
+  const { algorithm, interaction, onSelectAlgorithm, onSelectInteraction } = useAlgorithmContext();
 
   const { isLineByLine, onLineByLinePrev, onLineByLineNext, currentChildAlgorithm } =
     React.useContext(MainContext);
@@ -524,7 +456,7 @@ const GradingControlsWrapper = ({
   const effectiveInteraction = interaction;
   return (
     <div className="flex items-center flex-wrap justify-evenly gap-3 w-full">
-      <button
+      <NavButton
         type="button"
         aria-label="Previous"
         onClick={(e) => {
@@ -533,45 +465,24 @@ const GradingControlsWrapper = ({
           onPrevClick();
         }}
         className="bp3-button bp3-minimal"
-        style={{
-          minWidth: '44px',
-          minHeight: '44px',
-          padding: '0 10px',
-          fontSize: '22px',
-          lineHeight: 1,
-          touchAction: 'manipulation',
-          WebkitTapHighlightColor: 'transparent',
-          border: '1px solid rgba(128, 128, 128, 0.25)',
-        }}
       >
         ◀
-      </button>
-      <button
+      </NavButton>
+      <NavButton
         type="button"
         aria-label="Next"
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          skipFn();
+          nextFn();
         }}
         className="bp3-button bp3-minimal"
-        style={{
-          minWidth: '44px',
-          minHeight: '44px',
-          padding: '0 10px',
-          fontSize: '22px',
-          lineHeight: 1,
-          touchAction: 'manipulation',
-          WebkitTapHighlightColor: 'transparent',
-          border: '1px solid rgba(128, 128, 128, 0.25)',
-        }}
       >
         ▶
-      </button>
-      {/* LBL secondary queue navigation buttons: ▲/▼ navigate between child blocks */}
+      </NavButton>
       {isLineByLine && (
         <>
-          <button
+          <NavButton
             type="button"
             aria-label="Previous Line"
             onClick={(e) => {
@@ -580,20 +491,10 @@ const GradingControlsWrapper = ({
               onLineByLinePrev?.();
             }}
             className="bp3-button bp3-minimal"
-            style={{
-              minWidth: '44px',
-              minHeight: '44px',
-              padding: '0 10px',
-              fontSize: '22px',
-              lineHeight: 1,
-              touchAction: 'manipulation',
-              WebkitTapHighlightColor: 'transparent',
-              border: '1px solid rgba(128, 128, 128, 0.25)',
-            }}
           >
             ▲
-          </button>
-          <button
+          </NavButton>
+          <NavButton
             type="button"
             aria-label="Next Line"
             onClick={(e) => {
@@ -602,19 +503,9 @@ const GradingControlsWrapper = ({
               onLineByLineNext?.();
             }}
             className="bp3-button bp3-minimal"
-            style={{
-              minWidth: '44px',
-              minHeight: '44px',
-              padding: '0 10px',
-              fontSize: '22px',
-              lineHeight: 1,
-              touchAction: 'manipulation',
-              WebkitTapHighlightColor: 'transparent',
-              border: '1px solid rgba(128, 128, 128, 0.25)',
-            }}
           >
             ▼
-          </button>
+          </NavButton>
         </>
       )}
       {isAutoAdvanceMode ? (
@@ -637,260 +528,11 @@ const GradingControlsWrapper = ({
         algorithm={effectiveAlgorithm}
         onSelectAlgorithm={onSelectAlgorithm || (() => {})}
       />
-      {/* InteractionSelector: in LBL mode, displays parent card's interaction; switching operates on parent card */}
       <InteractionSelector
         interaction={effectiveInteraction}
         onSelectInteraction={onSelectInteraction || (() => {})}
       />
     </div>
-  );
-};
-
-const FixedIntervalEditor = () => {
-  const { fixed_multiplier, setFixed_multiplier, fixed_unit, setFixed_unit } =
-    React.useContext(MainContext);
-  const handleInputValueChange = (numericValue) => {
-    if (isNaN(numericValue)) return;
-    setFixed_multiplier(numericValue);
-  };
-
-  const unitOptions = [
-    { value: FixedTimeUnit.DAYS, label: 'Days' },
-    { value: FixedTimeUnit.WEEKS, label: 'Weeks' },
-    { value: FixedTimeUnit.MONTHS, label: 'Months' },
-    { value: FixedTimeUnit.YEARS, label: 'Years' },
-  ];
-
-  return (
-    <div className="flex p-2 items-center w-80 justify-evenly">
-      <div className="">Every</div>
-      <div className="w-24">
-        <Blueprint.NumericInput
-          min={1}
-          max={365}
-          stepSize={1}
-          majorStepSize={30}
-          minorStepSize={1}
-          value={fixed_multiplier}
-          onValueChange={handleInputValueChange}
-          fill
-        />
-      </div>
-      <Blueprint.HTMLSelect
-        value={fixed_unit}
-        onChange={(e) => setFixed_unit(e.currentTarget.value as FixedTimeUnit)}
-        minimal
-      >
-        {unitOptions.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </Blueprint.HTMLSelect>
-    </div>
-  );
-};
-
-const IntervalString = ({ algorithm, fixed_multiplier, fixed_unit, nextDueDate }) => {
-  if (algorithm === SchedulingAlgorithm.PROGRESSIVE) {
-    const displayText = (nextDueDate ? formatDaysFromNow(nextDueDate) : null) || 'Progressive';
-    return (
-      <>
-        Review <span className="font-medium mr-3">{displayText}</span>
-      </>
-    );
-  }
-
-  if (algorithm === SchedulingAlgorithm.FIXED_TIME) {
-    const unit = fixed_unit || FixedTimeUnit.DAYS;
-    const value = fixed_multiplier || 3;
-    const unitLabelMap = {
-      [FixedTimeUnit.DAYS]: 'Days',
-      [FixedTimeUnit.WEEKS]: 'Weeks',
-      [FixedTimeUnit.MONTHS]: 'Months',
-      [FixedTimeUnit.YEARS]: 'Years',
-    };
-    const singularMap = {
-      [FixedTimeUnit.DAYS]: 'Daily',
-      [FixedTimeUnit.WEEKS]: 'Weekly',
-      [FixedTimeUnit.MONTHS]: 'Monthly',
-      [FixedTimeUnit.YEARS]: 'Yearly',
-    };
-
-    if (value === 1) {
-      return (
-        <>
-          Review <span className="font-medium mr-3">{singularMap[unit]}</span>
-        </>
-      );
-    }
-    return (
-      <>
-        Review{' '}
-        <span className="font-medium mr-3">
-          Every {value} {unitLabelMap[unit]}
-        </span>
-      </>
-    );
-  }
-
-  return null;
-};
-
-const FixedIntervalModeControls = ({
-  activeButtonKey,
-  intervalPractice,
-  isIntervalEditorOpen,
-  toggleIntervalEditorOpen,
-  intervalEstimates,
-  effectiveAlgorithm,
-}: {
-  activeButtonKey: string;
-  intervalPractice: () => void;
-  isIntervalEditorOpen: boolean;
-  toggleIntervalEditorOpen: () => void;
-  intervalEstimates: IntervalEstimates;
-  effectiveAlgorithm: SchedulingAlgorithm | undefined;
-}): JSX.Element => {
-  const { fixed_multiplier, fixed_unit } = React.useContext(MainContext);
-  // Uses effectiveAlgorithm from parent context (not usePracticeSession().algorithm)
-  // to remain consistent with the rendering decision chain that selects this component.
-  const isProgressive = effectiveAlgorithm === SchedulingAlgorithm.PROGRESSIVE;
-  const onInteractionhandler = (nextState) => {
-    if (!nextState && isIntervalEditorOpen) toggleIntervalEditorOpen();
-  };
-  if (!intervalEstimates) {
-    console.error('Interval estimates not set');
-    return <></>;
-  }
-
-  return (
-    <>
-      {isProgressive ? (
-        <ControlButton
-          icon="time"
-          className="text-base font-normal py-1"
-          intent="default"
-          tooltipText={`Progressive Interval`}
-          outlined
-        >
-          <span className="ml-2">
-            <IntervalString
-              algorithm={effectiveAlgorithm}
-              fixed_multiplier={fixed_multiplier}
-              fixed_unit={fixed_unit}
-              nextDueDate={intervalEstimates[0]?.nextDueDate}
-            />
-          </span>
-        </ControlButton>
-      ) : (
-        <Blueprint.Popover isOpen={isIntervalEditorOpen} onInteraction={onInteractionhandler}>
-          <ControlButton
-            icon="time"
-            className="text-base font-normal py-1"
-            intent="default"
-            onClick={toggleIntervalEditorOpen}
-            tooltipText={`Change Interval`}
-            active={activeButtonKey === 'change-interval-button'}
-            outlined
-          >
-            <span className="ml-2">
-              <IntervalString
-                algorithm={effectiveAlgorithm}
-                fixed_multiplier={fixed_multiplier}
-                fixed_unit={fixed_unit}
-                nextDueDate={intervalEstimates[0]?.nextDueDate}
-              />
-              <ButtonTags>E</ButtonTags>
-            </span>
-          </ControlButton>
-          <FixedIntervalEditor />
-        </Blueprint.Popover>
-      )}
-      <ControlButton
-        icon="tick"
-        className="text-base font-medium py-1"
-        intent="success"
-        onClick={() => intervalPractice()}
-        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[0]?.nextDueDate)}`}
-        active={activeButtonKey === 'next-button'}
-        outlined
-      >
-        Next{' '}
-        <span className="ml-2">
-          <ButtonTags>SPACE</ButtonTags>
-        </span>
-      </ControlButton>
-    </>
-  );
-};
-
-const SpacedIntervalModeControls = ({
-  activeButtonKey,
-  gradeFn,
-  intervalEstimates,
-}: {
-  activeButtonKey: string;
-  gradeFn: (_sm2_grade: number) => void;
-  intervalEstimates: IntervalEstimates;
-}): JSX.Element => {
-  if (!intervalEstimates) {
-    console.error('Interval estimates not set');
-    return <></>;
-  }
-
-  return (
-    <>
-      <ControlButton
-        key="forget-button"
-        className="text-base font-medium py-1"
-        intent="danger"
-        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[0]?.nextDueDate)}`}
-        onClick={() => gradeFn(0)}
-        active={activeButtonKey === 'forgot-button'}
-      >
-        Forgot{' '}
-        <span className="ml-2">
-          <ButtonTags>F</ButtonTags>
-        </span>
-      </ControlButton>
-      <ControlButton
-        className="text-base font-medium py-1"
-        intent="warning"
-        onClick={() => gradeFn(2)}
-        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[2]?.nextDueDate)}`}
-        active={activeButtonKey === 'hard-button'}
-      >
-        Hard{' '}
-        <span className="ml-2">
-          <ButtonTags>H</ButtonTags>
-        </span>
-      </ControlButton>
-      <ControlButton
-        className="text-base font-medium py-1"
-        intent="primary"
-        onClick={() => gradeFn(4)}
-        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[4]?.nextDueDate)}`}
-        active={activeButtonKey === 'good-button'}
-      >
-        Good{' '}
-        <span className="ml-2">
-          <ButtonTags>G</ButtonTags>
-        </span>
-      </ControlButton>
-      <ControlButton
-        className="text-base font-medium py-1"
-        intent="success"
-        onClick={() => gradeFn(5)}
-        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[5]?.nextDueDate)}`}
-        active={activeButtonKey === 'perfect-button'}
-      >
-        Perfect{' '}
-        <span className="ml-2">
-          <ButtonTags>SPACE</ButtonTags>
-        </span>
-      </ControlButton>
-    </>
   );
 };
 
@@ -912,210 +554,5 @@ const FooterActionsWrapper = styled.div`
     margin-left: 0;
   }
 `;
-
-const ControlButtonWrapper = styled(Blueprint.Button, {
-  shouldForwardProp: (prop) => prop !== '$intentTone',
-})<{ $intentTone?: string }>`
-  && {
-    background: ${colors.overlayLight} !important;
-    background-color: ${colors.overlayLight} !important;
-    border: none !important;
-    box-shadow: inset 0 0 0 1px ${colors.borderSubtle} !important;
-  }
-
-  color: ${(props) => getIntentColor(props.$intentTone)};
-
-  & .bp3-button-text {
-    color: ${(props) => getIntentColor(props.$intentTone)};
-  }
-
-  &&:hover {
-    background: ${colors.overlayLightHover} !important;
-    background-color: ${colors.overlayLightHover} !important;
-    box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.3) !important;
-  }
-`;
-
-type ControlButtonIntent = Intent | 'default' | 'none';
-
-interface ControlButtonProps extends Omit<Blueprint.IButtonProps, 'intent'> {
-  tooltipText?: string;
-  wrapperClassName?: string;
-  intent?: ControlButtonIntent;
-  children?: React.ReactNode;
-}
-
-const ControlButton = ({
-  tooltipText,
-  wrapperClassName = '',
-  intent,
-  ...props
-}: ControlButtonProps) => {
-  const buttonIntent = intent === 'default' || intent === 'none' ? undefined : intent;
-
-  return (
-    <Tooltip content={tooltipText || ''} placement="top" wrapperClassName={wrapperClassName}>
-      <ControlButtonWrapper {...props} intent={buttonIntent} $intentTone={intent} />
-    </Tooltip>
-  );
-};
-
-interface AlgorithmOption {
-  value: SchedulingAlgorithm;
-  label: string;
-}
-
-interface InteractionOption {
-  value: InteractionStyle;
-  label: string;
-  icon: IconName;
-}
-
-const ALGORITHM_OPTIONS: AlgorithmOption[] = Object.values(SchedulingAlgorithm).map((algo) => ({
-  value: algo,
-  label: ALGORITHM_META[algo].label,
-}));
-
-const INTERACTION_OPTIONS: InteractionOption[] = Object.values(InteractionStyle).map((style) => ({
-  value: style,
-  label: INTERACTION_META[style].label,
-  icon: (INTERACTION_META[style].icon as IconName) || 'layers',
-}));
-const AlgorithmSelect = BlueprintSelect.Select.ofType<AlgorithmOption>();
-const InteractionSelect = BlueprintSelect.Select.ofType<InteractionOption>();
-
-const SelectorItemWrapper = styled.div<{ active: boolean }>`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  position: relative;
-  user-select: none;
-  cursor: pointer;
-  border-radius: 2px;
-  font-size: 13px;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: currentColor;
-    opacity: ${({ active }) => (active ? 0.08 : 0)};
-    border-radius: 2px;
-    pointer-events: none;
-  }
-
-  &:hover::before {
-    opacity: ${({ active }) => (active ? 0.12 : 0.06)};
-  }
-`;
-
-const AlgorithmSelector = ({
-  algorithm,
-  onSelectAlgorithm,
-}: {
-  algorithm: SchedulingAlgorithm | undefined;
-  onSelectAlgorithm: (_algorithm: SchedulingAlgorithm) => void;
-}) => {
-  const activeOption = ALGORITHM_OPTIONS.find((o) => o.value === algorithm) || ALGORITHM_OPTIONS[0];
-
-  return (
-    <AlgorithmSelect
-      items={ALGORITHM_OPTIONS}
-      activeItem={activeOption}
-      filterable={false}
-      itemRenderer={(option: AlgorithmOption, { handleClick, modifiers }) => {
-        const isActive = option.value === activeOption.value;
-        return (
-          <SelectorItemWrapper
-            active={modifiers.active}
-            key={option.value}
-            onClick={handleClick}
-            data-testid={`algorithm-option-${option.label.toLowerCase().replace(/\s+/g, '-')}`}
-          >
-            <span style={{ fontWeight: isActive ? 600 : 400 }}>{option.label}</span>
-            {isActive && (
-              <Blueprint.Icon
-                icon="tick"
-                iconSize={12}
-                style={{ marginLeft: 'auto', color: '#0d8050' }}
-              />
-            )}
-          </SelectorItemWrapper>
-        );
-      }}
-      onItemSelect={(option: AlgorithmOption) => onSelectAlgorithm(option.value)}
-      popoverProps={{ minimal: true }}
-    >
-      <Blueprint.Button
-        rightIcon="caret-down"
-        minimal
-        data-testid="algorithm-button"
-        style={{ fontSize: '12px' }}
-      >
-        {activeOption.label}
-      </Blueprint.Button>
-    </AlgorithmSelect>
-  );
-};
-
-const InteractionSelector = ({
-  interaction,
-  onSelectInteraction,
-}: {
-  interaction: InteractionStyle | undefined;
-  onSelectInteraction: (_interaction: InteractionStyle) => void;
-}) => {
-  const activeOption =
-    INTERACTION_OPTIONS.find((o) => o.value === interaction) || INTERACTION_OPTIONS[0];
-
-  return (
-    <InteractionSelect
-      items={INTERACTION_OPTIONS}
-      activeItem={activeOption}
-      filterable={false}
-      itemRenderer={(option: InteractionOption, { handleClick, modifiers }) => {
-        const isActive = option.value === activeOption.value;
-        return (
-          <SelectorItemWrapper
-            active={modifiers.active}
-            key={option.value}
-            onClick={handleClick}
-            data-testid={`interaction-option-${option.label.toLowerCase().replace(/\s+/g, '-')}`}
-          >
-            <Blueprint.Icon
-              icon={option.icon}
-              iconSize={14}
-              style={{ opacity: isActive ? 1 : 0.6 }}
-            />
-            <span style={{ fontWeight: isActive ? 600 : 400 }}>{option.label}</span>
-            {isActive && (
-              <Blueprint.Icon
-                icon="tick"
-                iconSize={12}
-                style={{ marginLeft: 'auto', color: '#0d8050' }}
-              />
-            )}
-          </SelectorItemWrapper>
-        );
-      }}
-      onItemSelect={(option: InteractionOption) => onSelectInteraction(option.value)}
-      popoverProps={{ minimal: true }}
-    >
-      <Blueprint.Button
-        icon={activeOption.icon}
-        rightIcon="caret-down"
-        minimal
-        data-testid="interaction-button"
-        style={{ fontSize: '12px' }}
-      >
-        {activeOption.label}
-      </Blueprint.Button>
-    </InteractionSelect>
-  );
-};
 
 export default Footer;

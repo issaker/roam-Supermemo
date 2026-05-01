@@ -6,9 +6,15 @@
  *           → calculateCombinedCounts → limitRemainingPracticeData → calculateTodayStatus
  */
 import { Records, RecordUid, Session, isSessionMastered } from '~/models/session';
-import { CompletionStatus, RenderMode, Today, TodayInitial, sortNormalDueCardUids } from '~/models/practice';
+import {
+  CompletionStatus,
+  RenderMode,
+  Today,
+  TodayInitial,
+  sortNormalDueCardUids,
+} from '~/models/practice';
 import { generateNewSession } from '~/queries/utils';
-import { DeckConfig } from '~/hooks/useSettings';
+import { parseDeckConfigs } from '~/utils/deckConfig';
 import * as dateUtils from '~/utils/date';
 
 const fisherYatesShuffle = <T>(array: T[]): T[] => {
@@ -20,15 +26,18 @@ const fisherYatesShuffle = <T>(array: T[]): T[] => {
   return result;
 };
 
-export const initializeToday = ({ tagsList, cachedData, deckConfigs }) => {
+export const initializeToday = ({
+  tagsList,
+  cachedData,
+  deckConfigs,
+}: {
+  tagsList: string[];
+  cachedData: Record<string, any>;
+  deckConfigs: string;
+}) => {
   const today: Today = JSON.parse(JSON.stringify(TodayInitial));
 
-  let parsedDeckConfigs: DeckConfig[] = [];
-  try {
-    parsedDeckConfigs = JSON.parse(deckConfigs);
-  } catch {
-    parsedDeckConfigs = [];
-  }
+  const parsedDeckConfigs = parseDeckConfigs(deckConfigs);
 
   for (const tag of tagsList) {
     const cachedTagData = cachedData?.[tag];
@@ -56,7 +65,7 @@ export const initializeToday = ({ tagsList, cachedData, deckConfigs }) => {
   return today;
 };
 
-export const calculateTodayStatus = ({ today, tagsList }) => {
+export const calculateTodayStatus = ({ today, tagsList }: { today: Today; tagsList: string[] }) => {
   for (const tag of tagsList) {
     const completed = today.tags[tag].completed;
     const remaining = today.tags[tag].new + today.tags[tag].due;
@@ -82,7 +91,15 @@ export const calculateTodayStatus = ({ today, tagsList }) => {
   }
 };
 
-export const calculateCompletedTodayCounts = ({ today, tagsList, sessionData }) => {
+export const calculateCompletedTodayCounts = ({
+  today,
+  tagsList,
+  sessionData,
+}: {
+  today: Today;
+  tagsList: string[];
+  sessionData: Record<string, Records>;
+}) => {
   for (const tag of tagsList) {
     let count = 0;
     const now = new Date();
@@ -90,7 +107,7 @@ export const calculateCompletedTodayCounts = ({ today, tagsList, sessionData }) 
 
     const currentTagSessionData = sessionData[tag];
     Object.keys(currentTagSessionData).forEach((cardUid) => {
-      const cardData = currentTagSessionData[cardUid];
+      const cardData = currentTagSessionData[cardUid] as Session & { isNew?: boolean };
       if (cardData?.isNew) return;
       const completedToday =
         !!cardData?.dateCreated &&
@@ -112,7 +129,13 @@ export const calculateCompletedTodayCounts = ({ today, tagsList, sessionData }) 
   return today;
 };
 
-export const calculateCombinedCounts = ({ today, tagsList }) => {
+export const calculateCombinedCounts = ({
+  today,
+  tagsList,
+}: {
+  today: Today;
+  tagsList: string[];
+}) => {
   today.combinedToday = {
     status: CompletionStatus.Unstarted,
     due: 0,
@@ -154,10 +177,7 @@ export const addNewCards = ({
 
     allSelectedTagCardsUids.forEach((referenceId) => {
       const latestSession = pluginPageData[referenceId] as Session & { isNew?: boolean };
-      if (
-        !pluginPageData[referenceId] ||
-        (latestSession?.isNew && !latestSession?.nextDueDate)
-      ) {
+      if (!pluginPageData[referenceId] || (latestSession?.isNew && !latestSession?.nextDueDate)) {
         newCardsUids.push(referenceId);
         if (!pluginPageData[referenceId]) {
           pluginPageData[referenceId] = generateNewSession();
@@ -179,7 +199,11 @@ export const addNewCards = ({
   }
 };
 
-export const getDueCardUids = (currentTagSessionData: Records, isCramming, shuffleCards = false) => {
+export const getDueCardUids = (
+  currentTagSessionData: Records,
+  isCramming: boolean,
+  shuffleCards = false
+) => {
   if (!Object.keys(currentTagSessionData).length) return [];
 
   return sortNormalDueCardUids(currentTagSessionData, {
@@ -189,7 +213,19 @@ export const getDueCardUids = (currentTagSessionData: Records, isCramming, shuff
   });
 };
 
-export const addDueCards = ({ today, tagsList, sessionData, isCramming, shuffleCards }) => {
+export const addDueCards = ({
+  today,
+  tagsList,
+  sessionData,
+  isCramming,
+  shuffleCards,
+}: {
+  today: Today;
+  tagsList: string[];
+  sessionData: Record<string, Records>;
+  isCramming: boolean;
+  shuffleCards: boolean;
+}) => {
   for (const currentTag of tagsList) {
     const currentTagSessionData = sessionData[currentTag];
     const dueCardsUids = getDueCardUids(currentTagSessionData, isCramming, shuffleCards);

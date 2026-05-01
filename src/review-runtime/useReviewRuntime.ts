@@ -3,6 +3,7 @@ import { Today } from '~/models/practice';
 import {
   CardMeta,
   InteractionStyle,
+  isSessionMastered,
   Records,
   RecordUid,
   Session,
@@ -28,35 +29,38 @@ import {
  * ARCHITECTURE INVARIANT — READ BEFORE MODIFYING:
  * ═══════════════════════════════════════════════════════════════════════
  *
- *   Cards are NEVER removed from the primaryQueue after grading.
+ *   Completed cards are NOT removed from the primaryQueue. They stay in
+ *   the queue so the user can undo a previous grade. When the user
+ *   switches decks or the session restarts, currentIndex is set to the
+ *   first uncompleted card, skipping already-practiced cards. On data
+ *   refresh, if the current card becomes completed, currentIndex advances
+ *   to the next uncompleted card.
  *
- *   The queue is built ONCE at session start from today's dueUids + newUids.
+ *   Cards are NOT removed immediately after grading — they stay in the
+ *   queue so the user can undo a previous grade. After each review,
+ *   currentIndex advances past the current card. When the user switches
+ *   decks or the session restarts, currentIndex is set to the first
+ *   uncompleted card, skipping any already-practiced cards.
+ *
+ *   The queue is rebuilt from scratch on tag switch or settings change.
+ *   On regular data refresh, only completed cards are removed — the
+ *   queue otherwise stays stable (no new cards appended, no reordering).
+ *
  *   Forgot and LBL-Next reinserts splice DUPLICATE entries directly into
- *   the queue state, but they never REMOVE the original entry.  Navigation
- *   is purely index-based: after each review, currentIndex++.
+ *   the queue state. Navigation is purely index-based: after each review,
+ *   currentIndex++.
  *
- *   DO NOT derive the queue from deriveDeckSnapshot or latestByUid on
- *   every mutation.  That was the cause of the "queue jumps to 0/51" bug:
- *   when a card was mastered, deriveDeckSnapshot excluded it from
- *   availablePrimaryQueue, focusNextAfterMutation couldn't find its entry,
- *   and fell back to queue[0].
- *
- *   If you're tempted to "re-derive the queue to keep it in sync":
- *   DON'T.  The queue is intentionally static.  Cards that have been
- *   reviewed stay in the queue so the user can navigate back to them.
- *   The only modifications are insertions (Forgot / LBL-Next), not removals.
+ *   DO NOT re-derive the queue from deriveDeckSnapshot or latestByUid on
+ *   every mutation. That was the cause of the "queue jumps to 0/51" bug.
  *
  * ═══════════════════════════════════════════════════════════════════════
  *
  * Architecture:
  *   1. SessionFacts (facts.latestByUid) — one session per uid
- *   2. primaryQueue — state, built from initialUids, only grows via reinserts
+ *   2. primaryQueue — state, built from initialUids, shrinks as cards are completed
  *   3. ViewState — currentIndex into the queue + child focus state
  */
-import {
-  deriveChildSessionMap,
-  deriveDeckSnapshot,
-} from './selectors';
+import { deriveDeckSnapshot } from './selectors';
 import { ReviewViewState, SessionFacts } from './types';
 
 const mergeSourceIntoFacts = ({
@@ -108,69 +112,90 @@ export const useReviewRuntime = ({
   }, [practiceData]);
 
   // ── primary queue ──
-  // Generated once from today's dueUids + newUids.  Cards are never removed.
-  // Reinserts (Forgot / LBL-Next) splice duplicate entries directly into
-  // this state array via reinsertCard.
+  // Built from today's completedUids + dueUids + newUids. Completed cards
+  // are placed at the front so the user can navigate left to review or undo.
+  // currentIndex is set to the first uncompleted card on tag switch /
+  // session restart.
   const initialUids = React.useMemo(() => {
     const tagData = today.tags[selectedTag];
     if (!tagData) return [];
-    return [...(tagData.dueUids || []), ...(tagData.newUids || [])];
+    const completed = tagData.completedUids || [];
+    const due = tagData.dueUids || [];
+    const newUids = tagData.newUids || [];
+    const seen = new Set<string>();
+    const result: RecordUid[] = [];
+    for (const uid of [...completed, ...due, ...newUids]) {
+      if (!seen.has(uid)) {
+        seen.add(uid);
+        result.push(uid);
+      }
+    }
+    return result;
   }, [today, selectedTag]);
 
-  const [primaryQueue, setPrimaryQueue] = React.useState<RecordUid[]>([]);
-
-  // Sync primaryQueue with initialUids.
-  // - On composition change (different set of uids): rebuild from scratch.
-  //   currentIndex is reset to 0 by the initialUidsKey effect below.
-  // - On order-only change (same uids, different sort): reorder preserving
-  //   duplicate insertions at their relative positions.
-  React.useEffect(() => {
-    setPrimaryQueue((prev) => {
-      if (prev.length === 0) return [...initialUids];
-
-      const newSet = new Set(initialUids);
-      const prevSet = new Set(prev);
-      const sameComposition =
-        newSet.size === prevSet.size &&
-        Array.from(newSet).every((uid) => prevSet.has(uid));
-
-      if (!sameComposition) return [...initialUids];
-
-      // Order change only — reorder to match new initialUids while
-      // preserving inserted duplicates after their corresponding originals.
-      const result = [...initialUids];
-      const newCount = new Map<string, number>();
-      for (const uid of initialUids) newCount.set(uid, (newCount.get(uid) || 0) + 1);
-
-      const seenInOld = new Map<string, number>();
-      for (const uid of prev) {
-        const count = (seenInOld.get(uid) || 0) + 1;
-        seenInOld.set(uid, count);
-        if (count > (newCount.get(uid) || 0)) {
-          const lastIdx = result.lastIndexOf(uid);
-          result.splice(lastIdx + 1, 0, uid);
-        }
-      }
-      return result;
-    });
-  }, [initialUids]);
-
-  // Reset index when the base queue COMPOSITION changes (e.g. tag switch).
-  // Key is based on SORTED UIDs so that ORDER changes from
-  // sortNormalDueCardUids (after undo or review) don't trigger a reset —
-  // order changes are handled by the queue sync effect above.
-  const initialUidsKey = React.useMemo(
-    () => Array.from(new Set(initialUids)).sort().join(','),
-    [initialUids]
+  const completedUidsSet = React.useMemo(
+    () => new Set(today.tags[selectedTag]?.completedUids || []),
+    [today, selectedTag]
   );
+
+  const [primaryQueue, setPrimaryQueue] = React.useState<RecordUid[]>(() => initialUids);
+
+  const initialUidsKey = React.useMemo(() => initialUids.join(','), [initialUids]);
+
+  const primaryQueueRef = React.useRef(primaryQueue);
+  primaryQueueRef.current = primaryQueue;
+
+  const viewStateRef = React.useRef(viewState);
+  viewStateRef.current = viewState;
+
+  const prevInitialUidsKeyRef = React.useRef('');
+  const prevCompletedUidsSetRef = React.useRef(completedUidsSet);
+
+  // Sync primaryQueue when data changes.
+  // - Tag switch / settings change (initialUidsKey changed) → rebuild queue,
+  //   position at first uncompleted card (skip already-practiced cards)
+  // - Data refresh (only completedUidsSet changed) → remove newly completed cards, adjust currentIndex
   React.useEffect(() => {
-    setViewState({
-      currentIndex: 0,
-      focusedChildUid: undefined,
-      maxVisitedChildIndex: 0,
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialUidsKey]);
+    const initialUidsChanged = prevInitialUidsKeyRef.current !== initialUidsKey;
+    prevInitialUidsKeyRef.current = initialUidsKey;
+
+    if (initialUidsChanged) {
+      setPrimaryQueue(initialUids);
+      const now = new Date();
+      const firstUncompletedIndex = initialUids.findIndex((uid) => {
+        const session = facts.latestByUid[uid] as Session & { isNew?: boolean };
+        if (!session || session.isNew) return true;
+        return !isSessionMastered(session, now);
+      });
+      setViewState({
+        currentIndex: firstUncompletedIndex >= 0 ? firstUncompletedIndex : initialUids.length,
+        focusedChildUid: undefined,
+        maxVisitedChildIndex: 0,
+      });
+      prevCompletedUidsSetRef.current = completedUidsSet;
+      return;
+    }
+
+    const prevSet = prevCompletedUidsSetRef.current;
+    const newlyCompleted = new Set(Array.from(completedUidsSet).filter((uid) => !prevSet.has(uid)));
+    prevCompletedUidsSetRef.current = completedUidsSet;
+
+    if (newlyCompleted.size === 0) return;
+
+    const currentQueue = primaryQueueRef.current;
+    const currentUid = currentQueue[viewStateRef.current.currentIndex];
+
+    if (currentUid && newlyCompleted.has(currentUid)) {
+      const nextUncompletedIndex = currentQueue.findIndex(
+        (uid, idx) => idx > viewStateRef.current.currentIndex && !completedUidsSet.has(uid)
+      );
+      setViewState((prev) => ({
+        ...prev,
+        currentIndex: nextUncompletedIndex >= 0 ? nextUncompletedIndex : currentQueue.length,
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialUidsKey, completedUidsSet]);
 
   // ── derived display state (for status badges, completion checks) ──
   // deckSnapshot is only used for DISPLAY.  Never for queue derivation.
@@ -200,25 +225,16 @@ export const useReviewRuntime = ({
 
   const currentPrimaryEntryId = focusedPrimary.entry?.id;
 
-  // ── reinsert: common function for Forgot and LBL-Next ──
-  // Pure queue operation — splices a duplicate entry at afterIndex+1+offset.
-  // Does NOT affect navigation or any other system.
-  const reinsertCard = React.useCallback(
-    (uid: RecordUid, afterIndex: number, offset: number) => {
-      setPrimaryQueue((prev) => {
-        const insertAt = Math.min(afterIndex + 1 + offset, prev.length);
-        const next = [...prev];
-        next.splice(insertAt, 0, uid);
-        return next;
-      });
-    },
-    []
-  );
+  const reinsertCard = React.useCallback((uid: RecordUid, afterIndex: number, offset: number) => {
+    setPrimaryQueue((prev) => {
+      const insertAt = Math.min(afterIndex + 1 + offset, prev.length);
+      const next = [...prev];
+      next.splice(insertAt, 0, uid);
+      return next;
+    });
+  }, []);
 
   // ── navigation ──
-  // Pure index-based.  After reviewUnit advances currentIndex by 1,
-  // pressing left (offset=-1) returns to currentIndex-1, which is always
-  // the just-reviewed card (cards are never removed from the queue).
   const focusPrimaryByOffset = React.useCallback(
     (offset: number) => {
       setViewState((prev) => {
@@ -229,22 +245,19 @@ export const useReviewRuntime = ({
         return prev;
       });
     },
-    [primaryQueue.length]
-  );
-
-  const setFocusedPrimaryUid = React.useCallback(
-    (uid?: string) => {
-      if (uid === undefined) {
-        setViewState((prev) => ({ ...prev, currentIndex: 0 }));
-        return;
-      }
-      const index = primaryQueue.indexOf(uid);
-      if (index >= 0) {
-        setViewState((prev) => ({ ...prev, currentIndex: index }));
-      }
-    },
     [primaryQueue]
   );
+
+  const setFocusedPrimaryUid = React.useCallback((uid?: string) => {
+    if (uid === undefined) {
+      setViewState((prev) => ({ ...prev, currentIndex: 0 }));
+      return;
+    }
+    const index = primaryQueueRef.current.indexOf(uid);
+    if (index >= 0) {
+      setViewState((prev) => ({ ...prev, currentIndex: index }));
+    }
+  }, []);
 
   const setFocusedChildUid = React.useCallback((uid?: string) => {
     setViewState((prev) => ({
@@ -338,7 +351,8 @@ export const useReviewRuntime = ({
   //   2. Handle reinsert (Forgot / LBL-Next) via reinsertCard
   //   3. Reset showAnswers, then advance currentIndex by 1
   //
-  // Cards stay in the queue.  The queue is NOT rebuilt after mutation.
+  // Cards stay in the queue after grading so the user can undo.
+  // Completed cards are removed on data refresh or when switching decks.
   const reviewUnit = React.useCallback(
     async (args: {
       targetUid: RecordUid;
@@ -461,17 +475,10 @@ export const useReviewRuntime = ({
       // setShowAnswers(false) MUST precede currentIndex advance so the
       // current card's override is reset before any synchronous re-render
       // updates activeSetShowAnswersRef to point to the next card.
-      if (!isChild) {
-        // Normal card: Forgot with offset → reinsert this card later
+      if (!isChild || isForgot) {
+        const reinsertUid = isChild ? parentUid! : targetUid;
         if (isForgot && forgotReinsertOffset > 0) {
-          reinsertCard(targetUid, viewState.currentIndex, forgotReinsertOffset);
-        }
-        setShowAnswers(false);
-        setViewState((prev) => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
-      } else if (isForgot) {
-        // LBL child Forgot: reinsert PARENT card later, advance queue
-        if (forgotReinsertOffset > 0) {
-          reinsertCard(parentUid!, viewState.currentIndex, forgotReinsertOffset);
+          reinsertCard(reinsertUid, viewState.currentIndex, forgotReinsertOffset);
         }
         setShowAnswers(false);
         setViewState((prev) => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
@@ -492,14 +499,10 @@ export const useReviewRuntime = ({
           lblNextReinsertOffset! > 0 &&
           lineByLineCurrentChildIndex! < childList.length - 1
         ) {
-          // LBL-Next: reinsert parent card later, advance queue
           reinsertCard(parentUid!, viewState.currentIndex, lblNextReinsertOffset!);
           setViewState((prev) => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
         } else if (isCardComplete) {
           setViewState((prev) => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
-        } else {
-          // Stay on this parent card, advance within children
-          // No primary queue navigation
         }
 
         setFocusedChildUid(childList[nextDueIndex]);
@@ -507,25 +510,26 @@ export const useReviewRuntime = ({
       }
 
       // ── 4. Persist to Roam ──
+      // savePracticeData MUST complete before updateParentNextDueDate
+      // because the latter reads child sessions from Roam to derive the
+      // parent's nextDueDate — if the just-saved child isn't visible yet,
+      // deriveParentNextDueDateFromChildSessions treats it as due-now and
+      // incorrectly sets the parent's nextDueDate back to today.
       try {
-        const persists: Promise<void>[] = [
-          savePracticeData({
-            refUid: targetUid,
-            dataPageTitle,
-            dateCreated: now,
-            ...practiceResult,
-          }),
-        ];
+        await savePracticeData({
+          refUid: targetUid,
+          dataPageTitle,
+          dateCreated: now,
+          ...practiceResult,
+        });
         if (isChild) {
-          persists.push(
-            updateParentNextDueDate({
-              refUid: parentUid!,
-              childUids: childUidsList!,
-              dataPageTitle,
-            })
-          );
+          await updateParentNextDueDate({
+            refUid: parentUid!,
+            childUids: childUidsList!,
+            dataPageTitle,
+            childSessions: updatedChildSessionsForParent,
+          });
         }
-        await Promise.all(persists);
       } catch (err) {
         console.error('Memo: Failed to save practice data', err);
       } finally {
@@ -618,19 +622,16 @@ export const useReviewRuntime = ({
     currentCardRefUid,
     currentIndex: viewState.currentIndex,
     cardQueueLength: primaryQueue.length,
-    isFirst: viewState.currentIndex <= 0,
     setFocusedPrimaryUid,
     focusPrimaryByOffset,
     setFocusedChildUid,
     resetChildViewState,
     setMaxVisitedChildIndex,
-    reinsertCard,
     setPendingState,
     clearPendingState,
     upsertLatestSession,
     upsertLatestSessions,
     ensureLatestSessions,
-    deriveChildSessionMap,
     reviewUnit,
     updateReviewConfigAction,
   };

@@ -2,7 +2,7 @@
  * Style injection module — fixes z-index stacking for Roam Research image hover popups.
  */
 
-const STYLE_ID = 'roam-memo-z-index-fix';
+const STYLE_ID = 'roam-Supermemo-z-index-fix';
 
 const zIndexFixCSS = `
 /* Lower the practice dialog portal z-index so Roam image popups can appear above it */

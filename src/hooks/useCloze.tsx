@@ -2,7 +2,7 @@
  * useCloze Hook
  *
  * Implements custom cloze deletion using {} syntax.
- * Wraps matched text in <span class="roam-memo-cloze"> elements.
+ * Wraps matched text in <span class="roam-Supermemo-cloze"> elements.
  * When answers are hidden, cloze text is masked with background color.
  *
  * Note: Roam's native ^^highlight^^ is NOT treated as cloze.
@@ -37,7 +37,7 @@ function wrapMatches(node: Element, regex: RegExp) {
       const afterText = text.slice(matchedTextEnd);
 
       const clozeElm = document.createElement('span');
-      clozeElm.classList.add('roam-memo-cloze');
+      clozeElm.classList.add('roam-Supermemo-cloze');
       clozeElm.textContent = matchedText;
 
       const beforeElm = document.createTextNode(beforeText);
@@ -78,7 +78,7 @@ const useCloze = ({ renderedBlockElm, hasClozeCallback }: {
     const re = new RegExp(`{(.+?)}`, 'gs');
     wrapMatches(mainBlockElm, re);
 
-    const clozeElms = renderedBlockElm.querySelectorAll('.roam-memo-cloze');
+    const clozeElms = renderedBlockElm.querySelectorAll('.roam-Supermemo-cloze');
     setClozeCount(clozeElms.length);
   }, [renderedBlockElm]);
 

@@ -10,11 +10,7 @@
  * - createChildBlock: Creates a child block under a parent
  * - generateNewSession: Creates default session data for new cards
  */
-import {
-  NewSession,
-  SchedulingAlgorithm,
-  InteractionStyle,
-} from '~/models/session';
+import { NewSession, SchedulingAlgorithm, InteractionStyle } from '~/models/session';
 
 export const parentChainInfoQuery = `[
   :find (pull ?parentIds [
@@ -27,7 +23,7 @@ export const parentChainInfoQuery = `[
     [?block :block/parents ?parentIds]
   ]`;
 
-const getParentChainInfo = async ({ refUid }) => {
+const getParentChainInfo = async ({ refUid }: { refUid: string }) => {
   const dataResults = await window.roamAlphaAPI.q(parentChainInfoQuery, refUid);
   return dataResults.map((r) => r[0]);
 };
@@ -53,7 +49,7 @@ export const blockInfoQuery = `[
     [?block :block/uid ?refId]
   ]`;
 
-export const fetchBlockInfo: (refUid: any) => Promise<BlockInfo> = async (refUid) => {
+export const fetchBlockInfo: (refUid: string) => Promise<BlockInfo> = async (refUid) => {
   const blockInfo = (await window.roamAlphaAPI.q(blockInfoQuery, refUid))[0][0];
   const parentChainInfo = await getParentChainInfo({ refUid });
 
@@ -63,10 +59,10 @@ export const fetchBlockInfo: (refUid: any) => Promise<BlockInfo> = async (refUid
 
   if (parentChainInfo.length > 1) {
     const breadcrumbsWithDepth = parentChainInfo.map((parent) => {
-      const parentData = window.roamAlphaAPI.pull(
-        '[:block/uid {:block/parents [:block/uid]}]',
-        [':block/uid', parent.uid]
-      );
+      const parentData = window.roamAlphaAPI.pull('[:block/uid {:block/parents [:block/uid]}]', [
+        ':block/uid',
+        parent.uid,
+      ]);
 
       return {
         ...parent,
@@ -95,14 +91,14 @@ export const getPageQuery = `[
     [?page :block/uid ?uid]
 ]`;
 
-const getPage = (page) => {
+const getPage = (page: string) => {
   const results = window.roamAlphaAPI.q(getPageQuery, page);
   if (results.length) {
     return results[0][0];
   }
 };
 
-export const getOrCreatePage = async (pageTitle) => {
+export const getOrCreatePage = async (pageTitle: string) => {
   const page = getPage(pageTitle);
   if (page) return page;
   const uid = window.roamAlphaAPI.util.generateUID();
@@ -111,7 +107,7 @@ export const getOrCreatePage = async (pageTitle) => {
   return getPage(pageTitle);
 };
 
-export const getBlockOnPage = (page, block) => {
+export const getBlockOnPage = (page: string, block: string) => {
   const results = window.roamAlphaAPI.q(
     `
     [:find ?block_uid
@@ -183,7 +179,7 @@ export const childBlocksOnPageQuery = `[
     [?tagPage :block/children ?tagPageChildren]
   ]`;
 
-export const getChildBlocksOnPage = async (page) => {
+export const getChildBlocksOnPage = async (page: string) => {
   const queryResults = await window.roamAlphaAPI.q(childBlocksOnPageQuery, page);
   if (!queryResults.length) return [];
   return queryResults;
@@ -235,7 +231,12 @@ export const getDailyNoteBlockUids = async (): Promise<string[]> => {
   return results.map((arr) => arr[0]);
 };
 
-export const createChildBlock = async (parent_uid, block, order, blockProps = {}) => {
+export const createChildBlock = async (
+  parent_uid: string,
+  block: string,
+  order: number,
+  blockProps: Record<string, any> = {}
+) => {
   if (!order) {
     order = 0;
   }
@@ -249,18 +250,33 @@ export const createChildBlock = async (parent_uid, block, order, blockProps = {}
   return uid;
 };
 
-export const createBlockOnPage = async (page, block, order, blockProps) => {
+const createBlockOnPage = async (
+  page: string,
+  block: string,
+  order: number,
+  blockProps: Record<string, any>
+) => {
   const page_uid = getPage(page);
   return createChildBlock(page_uid, block, order, blockProps);
 };
 
-export const getOrCreateBlockOnPage = async (page, block, order, blockProps) => {
+export const getOrCreateBlockOnPage = async (
+  page: string,
+  block: string,
+  order: number,
+  blockProps: Record<string, any>
+) => {
   const block_uid = getBlockOnPage(page, block);
   if (block_uid) return block_uid;
   return createBlockOnPage(page, block, order, blockProps);
 };
 
-export const getOrCreateChildBlock = async (parent_uid, block, order, blockProps) => {
+export const getOrCreateChildBlock = async (
+  parent_uid: string,
+  block: string,
+  order: number,
+  blockProps: Record<string, any>
+) => {
   const block_uid = getChildBlock(parent_uid, block);
   if (block_uid) return block_uid;
   return createChildBlock(parent_uid, block, order, blockProps);

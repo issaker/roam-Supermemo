@@ -1,5 +1,5 @@
 /**
- * Roam Memo Theme System
+ * Roam Supermemo Theme System
  *
  * Design Principle:
  * - All colors inherit from Roam body automatically via CSS

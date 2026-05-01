@@ -12,7 +12,7 @@
  *   2. Startup: extensionAPI has data? → use it directly, fill missing defaults
  *   3. Update:  updateSetting() → write extensionAPI → update React state
  *              → schedule debounced page sync (5s, coalesced)
- *   4. Sync:    roamMemoSettingsChanged event → re-read extensionAPI → update React state
+ *   4. Sync:    roamSupermemoSettingsChanged event → re-read extensionAPI → update React state
  *   5. Unmount: flush any pending page sync immediately
  *
  * Why this design:
@@ -51,7 +51,7 @@ export type Settings = {
 export const defaultSettings: Settings = {
   deckConfigs:
     '[{"name":"memo","swapQA":false,"weight":50},{"name":"DailyNote","swapQA":false,"weight":50}]',
-  dataPageTitle: 'roam/memo',
+  dataPageTitle: 'roam/Supermemo',
   dailyLimit: 0,
   historyCleanupKeepCount: 3,
   rtlEnabled: false,
@@ -80,18 +80,23 @@ const SETTING_TYPES = {
 
 const SETTING_KEYS = Object.keys(defaultSettings) as (keyof Settings)[];
 
-const coerceSettingValue = (key: string, value: any): any => {
+const coerceSettingValue = (key: keyof Settings, value: unknown): Settings[keyof Settings] => {
   const type = SETTING_TYPES[key];
-  if (type === 'number') return Number(value);
-  if (type === 'boolean') return value === true || value === 'true';
-  return value;
+  if (type === 'number') return Number(value) as Settings[keyof Settings];
+  if (type === 'boolean') return (value === true || value === 'true') as Settings[keyof Settings];
+  return value as Settings[keyof Settings];
 };
 
-const coerceAllSettings = (allSettings: Record<string, any>): Record<string, any> => {
+const coerceAllSettings = (
+  allSettings: Record<string, unknown>
+): Record<string, Settings[keyof Settings]> => {
   return Object.keys(allSettings).reduce((acc, key) => {
-    acc[key] = coerceSettingValue(key, allSettings[key]);
+    const settingKey = key as keyof Settings;
+    if (SETTING_KEYS.includes(settingKey)) {
+      acc[key] = coerceSettingValue(settingKey, allSettings[key]);
+    }
     return acc;
-  }, {});
+  }, {} as Record<string, Settings[keyof Settings]>);
 };
 
 const PAGE_SYNC_DEBOUNCE_MS = 5000;
@@ -107,10 +112,10 @@ const useSettings = () => {
     const pageSettings = await loadSettingsFromPage(dataPageTitle);
     if (!pageSettings) return false;
 
-    const canWrite = typeof window.roamMemo?.extensionAPI?.settings?.set === 'function';
+    const canWrite = typeof window.roamSupermemo?.extensionAPI?.settings?.set === 'function';
     if (canWrite) {
       for (const [key, value] of Object.entries(pageSettings)) {
-        window.roamMemo.extensionAPI.settings.set(key, value);
+        window.roamSupermemo.extensionAPI.settings.set(key, value);
       }
     }
     return true;
@@ -118,12 +123,12 @@ const useSettings = () => {
 
   // Fill any missing default values in extensionAPI
   const ensureAllDefaults = React.useCallback(() => {
-    const allSettings = window.roamMemo.extensionAPI.settings.getAll() || {};
+    const allSettings = window.roamSupermemo.extensionAPI.settings.getAll() || {};
     let needsUpdate = false;
 
     for (const key of SETTING_KEYS) {
       if (!(key in allSettings)) {
-        window.roamMemo.extensionAPI.settings.set(key, defaultSettings[key]);
+        window.roamSupermemo.extensionAPI.settings.set(key, defaultSettings[key]);
         needsUpdate = true;
       }
     }
@@ -133,7 +138,7 @@ const useSettings = () => {
 
   // Read all settings from extensionAPI into React state
   const syncSettingsFromAPI = React.useCallback(() => {
-    const allSettings = window.roamMemo.extensionAPI.settings.getAll() || {};
+    const allSettings = window.roamSupermemo.extensionAPI.settings.getAll() || {};
     ensureAllDefaults();
     const filteredSettings = coerceAllSettings(allSettings);
     setSettings((currentSettings) => ({ ...currentSettings, ...filteredSettings }));
@@ -146,7 +151,7 @@ const useSettings = () => {
 
     const initialize = async () => {
       try {
-        const allSettings = window.roamMemo.extensionAPI.settings.getAll() || {};
+        const allSettings = window.roamSupermemo.extensionAPI.settings.getAll() || {};
         const hasExistingSettings = SETTING_KEYS.some((key) => key in allSettings);
 
         if (!hasExistingSettings) {
@@ -173,10 +178,13 @@ const useSettings = () => {
       syncSettingsFromAPI();
     };
 
-    window.addEventListener('roamMemoSettingsChanged', handleSettingsChange as EventListener);
+    window.addEventListener('roamSupermemoSettingsChanged', handleSettingsChange as EventListener);
 
     return () => {
-      window.removeEventListener('roamMemoSettingsChanged', handleSettingsChange as EventListener);
+      window.removeEventListener(
+        'roamSupermemoSettingsChanged',
+        handleSettingsChange as EventListener
+      );
     };
   }, [syncSettingsFromAPI]);
 
@@ -228,8 +236,8 @@ const useSettings = () => {
    * This ensures the primary store is always up-to-date, even if the page write fails.
    */
   const updateSetting = React.useCallback(
-    (key: keyof Settings, value: any) => {
-      window.roamMemo.extensionAPI.settings.set(key, value);
+    <K extends keyof Settings>(key: K, value: Settings[K]) => {
+      window.roamSupermemo.extensionAPI.settings.set(key, value);
 
       setSettings((currentSettings) => {
         const newSettings = { ...currentSettings, [key]: coerceSettingValue(key, value) };

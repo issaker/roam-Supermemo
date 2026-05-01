@@ -1,14 +1,22 @@
 import * as Blueprint from '@blueprintjs/core';
 import * as BlueprintSelect from '@blueprintjs/select';
 import styled from '@emotion/styled';
+import { SelectorItemBase } from './selectorStyles';
 import * as dateUtils from '~/utils/date';
 import Tooltip from '~/components/Tooltip';
 import ButtonTags from '~/components/ButtonTags';
-import { ALGORITHM_META, INTERACTION_META, SchedulingAlgorithm, InteractionStyle, getAlgorithmIntent } from '~/models/session';
+import {
+  ALGORITHM_META,
+  INTERACTION_META,
+  SchedulingAlgorithm,
+  InteractionStyle,
+  getAlgorithmIntent,
+} from '~/models/session';
 import { MainContext } from '~/components/overlay/PracticeOverlay';
 import { colors } from '~/theme';
 import { useSafeContext } from '~/hooks/useSafeContext';
 import { usePracticeSession } from '~/contexts/PracticeSessionContext';
+import { useAlgorithmContext } from '~/hooks/useAlgorithmContext';
 
 interface HeaderProps {
   onCloseCallback: () => void;
@@ -73,31 +81,10 @@ const TagSelector = ({ tagsList, selectedTag, onTagChange }) => {
 };
 const TagSelect = BlueprintSelect.Select.ofType<string>();
 
-const TagSelectorItemWrapper = styled.div<{ active: boolean }>`
+const TagSelectorItemWrapper = styled(SelectorItemBase)`
   display: flex;
   justify-content: space-between;
   padding: 4px 6px;
-  position: relative;
-  user-select: none;
-  cursor: pointer;
-  border-radius: 2px;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: currentColor;
-    opacity: ${({ active }) => (active ? 0.08 : 0)};
-    border-radius: 2px;
-    pointer-events: none;
-  }
-
-  &:hover::before {
-    opacity: ${({ active }) => (active ? 0.12 : 0.06)};
-  }
 `;
 
 const Tag = styled(Blueprint.Tag)`
@@ -128,7 +115,9 @@ const TagSelectorItem = ({ text, onClick, active, tagsList }) => {
     >
       <div className="flex">
         <div className="flex items-center">
-          {text === 'DailyNote' && <Blueprint.Icon icon="calendar" size={11} style={{ marginRight: '4px' }} />}
+          {text === 'DailyNote' && (
+            <Blueprint.Icon icon="calendar" size={11} style={{ marginRight: '4px' }} />
+          )}
           {text}
         </div>
         <div className="ml-2">
@@ -200,7 +189,13 @@ const StatusBadge = ({ status, nextDueDate, isCramming }) => {
   }
 };
 
-const ModeBadge = ({ algorithm, interaction }: { algorithm?: SchedulingAlgorithm; interaction?: InteractionStyle }) => {
+const ModeBadge = ({
+  algorithm,
+  interaction,
+}: {
+  algorithm?: SchedulingAlgorithm;
+  interaction?: InteractionStyle;
+}) => {
   if (!algorithm && !interaction) return null;
 
   const algoMeta = algorithm ? ALGORITHM_META[algorithm] : undefined;
@@ -251,26 +246,13 @@ const Header = ({
   onToggleBreadcrumbs,
   onSettingsClick,
 }: HeaderProps) => {
-  const {
-    selectedTag,
-    tagsList,
-    isCramming,
-    algorithm,
-    interaction,
-    today,
-    settings,
-  } = usePracticeSession();
+  const { selectedTag, tagsList, isCramming, settings } = usePracticeSession();
+  const { algorithm, interaction } = useAlgorithmContext();
   const { showBreadcrumbs } = settings;
-  const {
-    currentIndex,
-    cardQueueLength,
-  } = useSafeContext(MainContext);
-  const todaySelectedTag = today.tags[selectedTag];
-  const completedTodayCount = todaySelectedTag.completed;
-  const remainingTodayCount = isCramming ? cardQueueLength : completedTodayCount + cardQueueLength;
+  const { currentIndex, cardQueueLength } = useSafeContext(MainContext);
+  const remainingTodayCount = cardQueueLength;
 
-  const currentIndexDelta = isCramming ? 0 : completedTodayCount;
-  const currentDisplayCount = currentIndexDelta + currentIndex + 1;
+  const currentDisplayCount = currentIndex + 1;
 
   const toggleBreadcrumbs = () => {
     onToggleBreadcrumbs();
@@ -303,7 +285,9 @@ const Header = ({
             <Blueprint.Icon icon="cog" />
           </Tooltip>
         </div>
-        <span data-testid="mode-badge" className="mobile-hide">{!isDone && <ModeBadge algorithm={algorithm} interaction={interaction} />}</span>
+        <span data-testid="mode-badge" className="mobile-hide">
+          {!isDone && <ModeBadge algorithm={algorithm} interaction={interaction} />}
+        </span>
         <span data-testid="status-badge" className="mobile-hide">
           <StatusBadge
             status={status}

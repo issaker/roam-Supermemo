@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Settings } from '~/hooks/useSettings';
-import { Records, SchedulingAlgorithm, InteractionStyle } from '~/models/session';
+import { Records } from '~/models/session';
 import { Today } from '~/models/practice';
 import { handlePracticeProps } from '~/app';
 import { useSafeContext } from '~/hooks/useSafeContext';
@@ -17,11 +17,7 @@ export interface PracticeSessionContextValue {
   handleMemoTagChange: (_tag: string) => void;
   fetchPracticeData: () => void;
   dataPageTitle: string;
-  updateSetting: (_key: keyof Settings, _value: any) => void;
-  algorithm?: SchedulingAlgorithm;
-  interaction?: InteractionStyle;
-  onSelectAlgorithm?: (_algorithm: SchedulingAlgorithm) => void;
-  onSelectInteraction?: (_interaction: InteractionStyle) => void;
+  updateSetting: <K extends keyof Settings>(_key: K, _value: Settings[K]) => void;
 }
 
 export const PracticeSessionContext = React.createContext<PracticeSessionContextValue | undefined>(
@@ -40,7 +36,7 @@ interface PracticeSessionProviderProps {
   handleMemoTagChange: (_tag: string) => void;
   fetchPracticeData: () => void;
   dataPageTitle: string;
-  updateSetting: (_key: keyof Settings, _value: any) => void;
+  updateSetting: <K extends keyof Settings>(_key: K, _value: Settings[K]) => void;
   children: React.ReactNode;
 }
 

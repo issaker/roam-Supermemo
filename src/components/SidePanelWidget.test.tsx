@@ -1,4 +1,4 @@
-import { render, screen, act, within } from '@testing-library/react';
+import { render, screen, act, within, waitFor } from '@testing-library/react';
 
 import * as testUtils from '~/utils/testUtils';
 import * as dateUtils from '~/utils/date';
@@ -773,20 +773,30 @@ describe('Side Panel Widget', () => {
       expect(newTag).not.toBeInTheDocument();
     });
 
-    it('takes completed cards in decks into acount, alocating remaing limit count consistently', async () => {
+    it('takes completed cards in decks into account, keeping frozen distribution and subtracting completed cards', async () => {
       /**
-       * This handles the case where we have a limit set between multiple decks,
-       * we finish one deck, then refetch. we expect the limit to not restart
-       * but instead remember the original distribution and subtract completed
-       * cards from that. Essentially, distribution should remain the same.
+       * With the frozen today snapshot, the initial allocation is fixed.
+       * Completed cards are subtracted from the frozen UIDs, so the queue
+       * shrinks as cards are completed. No redistribution occurs on refresh.
+       *
+       * NOTE: addNewCards reverses new card order when shuffleCards=false,
+       * so the first new card selected is the last one added (1_new_4).
+       *
+       * Initial allocation (dailyLimit=3, 2 decks with weight 50 each):
+       *   memo:     1 due card (1_due_0), 1 new card (1_new_4)
+       *   deck-two: 1 due card (2_due_0), 0 new cards
+       *
+       * After completing 1_due_0 and 1_new_4 in memo:
+       *   memo:     0 due (1_due_0 completed), 0 new (1_new_4 completed)
+       *   deck-two: 1 due (2_due_0 still uncompleted), 0 new
        */
       const mockBuilder = new testUtils.MockDataBuilder();
 
       mockBuilder.withSetting({
         dailyLimit: 3,
+        shuffleCards: false,
       });
 
-      // Add some cards to default deck
       for (let i = 0; i < 5; i++) {
         mockBuilder.withCard({ uid: `1_due_${i}` }).withSession(`1_due_${i}`, {
           dateCreated: dateUtils.subtractDays(new Date(), 1),
@@ -795,7 +805,6 @@ describe('Side Panel Widget', () => {
         mockBuilder.withCard({ uid: `1_new_${i}` });
       }
 
-      // Add some cards to second deck
       mockBuilder.withTag('deck-two');
       for (let i = 0; i < 5; i++) {
         mockBuilder.withCard({ uid: `2_due_${i}`, tag: 'deck-two' }).withSession(`2_due_${i}`, {
@@ -811,49 +820,43 @@ describe('Side Panel Widget', () => {
         render(<App />);
       });
 
-      // Complete all the cards in the first deck
       mockBuilder.withSession(`1_due_0`, {
         dateCreated: new Date(),
         nextDueDate: dateUtils.addDays(new Date(), 1),
       });
-      mockBuilder.withSession(`1_new_0`, {
+      mockBuilder.withSession(`1_new_4`, {
         dateCreated: new Date(),
         nextDueDate: dateUtils.addDays(new Date(), 1),
       });
       mockBuilder.mockQueryResults();
 
-      // Refresh data by launching modal
       await act(async () => {
         testUtils.actions.launchModal();
       });
 
-      // Open Tag Selector
       await act(async () => {
         testUtils.actions.openTagSelector();
       });
 
-      // Here we expect the first deck to have 1 remaining due card (remainingLimit = 1)
-      const tagListElements = screen.getAllByTestId('tag-selector-item');
+      await waitFor(() => {
+        const tagListElements = screen.getAllByTestId('tag-selector-item');
 
-      // Since we know there are only two decks (memo and deck-two), we can use indices
-      // The first item should be 'memo' and the second should be 'deck-two'
-      const defaultDeckItem = tagListElements[0]; // memo
-      const secondDeckItem = tagListElements[1]; // deck-two
+        const defaultDeckItem = tagListElements[0];
+        const secondDeckItem = tagListElements[1];
 
-      // Verify the text content to make sure we have the right items
-      expect(defaultDeckItem.textContent).toContain('memo');
-      expect(secondDeckItem.textContent).toContain('deck-two');
+        expect(defaultDeckItem.textContent).toContain('memo');
+        expect(secondDeckItem.textContent).toContain('deck-two');
 
-      // Query for the due and new tags within each item
-      const defaultDeckDue = within(defaultDeckItem).queryByTestId('tag-selector-due');
-      const defaultDeckNew = within(defaultDeckItem).queryByTestId('tag-selector-new');
-      const secondDeckDue = within(secondDeckItem).queryByTestId('tag-selector-due');
-      const secondDeckNew = within(secondDeckItem).queryByTestId('tag-selector-new');
+        const defaultDeckDue = within(defaultDeckItem).queryByTestId('tag-selector-due');
+        const defaultDeckNew = within(defaultDeckItem).queryByTestId('tag-selector-new');
+        const secondDeckDue = within(secondDeckItem).queryByTestId('tag-selector-due');
+        const secondDeckNew = within(secondDeckItem).queryByTestId('tag-selector-new');
 
-      expect(defaultDeckDue).toHaveTextContent('1');
-      expect(defaultDeckNew).not.toBeInTheDocument();
-      expect(secondDeckDue).not.toBeInTheDocument();
-      expect(secondDeckNew).not.toBeInTheDocument();
+        expect(defaultDeckDue).not.toBeInTheDocument();
+        expect(defaultDeckNew).not.toBeInTheDocument();
+        expect(secondDeckDue).toHaveTextContent('1');
+        expect(secondDeckNew).not.toBeInTheDocument();
+      });
     });
   });
 });

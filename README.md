@@ -1,4 +1,4 @@
-# Memo - Spaced Repetition for Roam
+# Supermemo - Spaced Repetition for Roam
 
 A spaced repetition plugin for [Roam Research](https://roamresearch.com). Three algorithms: SM2, Progressive, Fixed Time.
 
@@ -10,11 +10,11 @@ A spaced repetition plugin for [Roam Research](https://roamresearch.com). Three 
 
 **Option 1 — `roam/js`**: Paste into a `{{[[roam/js]]}}` block:
 ```javascript
-if (!window.roamMemoLoaded) {
-  window.roamMemoLoaded = true;
+if (!window.roamSupermemoLoaded) {
+  window.roamSupermemoLoaded = true;
   const s = document.createElement('script');
-  s.src = 'https://cdn.jsdelivr.net/gh/issaker/roam-memo-Supermemo@main/standalone.js';
-  s.onload = () => window.RoamMemo?.onload({ extensionAPI: window.roamAlphaAPI });
+  s.src = 'https://cdn.jsdelivr.net/gh/issaker/roam-Supermemo@main/standalone.js';
+  s.onload = () => window.RoamSupermemo?.onload({ extensionAPI: window.roamAlphaAPI });
   document.head.appendChild(s);
 }
 ```
@@ -25,26 +25,70 @@ if (!window.roamMemoLoaded) {
 
 ### Usage
 
-1. Tag a block with `#memo` (or your tag)
-2. Click "Review" in the sidebar
-3. Review — child blocks are answers (hidden until "Show Answer")
+1. Tag a block with `#memo` (or your custom deck tag)
+2. Click "Review" in the sidebar, or use Command Palette (`Cmd/Ctrl+P` → "Memo: Start Review Session")
+3. Review cards — press `Space` to show answer, then grade
+
+**Normal mode**: child blocks are hidden answers, revealed on "Show Answer".
+**Swap Q/A mode**: answers shown first, question hidden until "Show Answer".
+**Line-by-Line (LBL) mode**: child blocks revealed one at a time top-to-bottom.
 
 ### Shortcuts
 
 | Action | Key |
 |--------|-----|
-| Show Answer / Perfect (SM2) | `Space` |
-| Forgot / Hard / Good | `F` `H` `G` (SM2) |
-| Skip / Next card | `S` / `→` |
+| Show Answer / Perfect (SM2) / Next (Progressive/Fixed) | `Space` |
+| Forgot / Hard / Good (SM2 only) | `F` `H` `G` |
+| Next card | `→` |
 | Previous card | `←` |
 | Previous / Next line (LBL) | `↑` `↓` |
 | Edit interval (Fixed Time) | `E` |
-| Breadcrumbs | `B` |
-| Close | `Esc` |
+| Toggle breadcrumbs | `B` |
+| Close overlay | `Esc` |
 
-### Features
+### Settings
 
-**Decks**: comma-separated tags in Settings. **DailyNote Deck**: review journal pages. **Cloze**: `{hide me}` braces. **Daily Limit**: cap reviews/day with round-robin distribution. **Shuffle**: randomize order. **Swap Q/A**: per-deck answer-first mode. **Cram**: review without scheduling after daily limit. **Breadcrumbs**: page hierarchy (`B` key). **Mode borders**: color-coded dialog border per algorithm.
+Open settings via the ⚙ gear icon in the review overlay header. Changes apply on "Apply & Restart".
+
+**Tag Pages (Decks)**: Table-based deck management. Each deck has a name, Swap Q/A toggle, and Weight %. Add (+), remove (−), and reorder (↑↓) decks via action buttons. Weights auto-redistribute on change and always sum to 100%. Set a deck's weight to 0 to disable its review quota.
+
+**DailyNote Deck**: Toggle via "Enable DailyNote Deck" checkbox. Aggregates all top-level blocks from your Daily Notes pages into a special deck (shown with 📅 icon in the deck selector).
+
+**Daily Review Limit**: Number of cards per day (0 = unlimited). When set, each deck receives a proportional share based on its Weight %.
+
+**Reinsert "Forgot" Cards After N Cards**: When you mark a card as "Forgot", it reappears N cards later. Set to 0 to disable.
+
+**Reinsert "LBL Next" Cards After N Cards**: When you click "Next" on an LBL + Progressive/Fixed card, it reappears N cards later. Set to 0 to review all lines consecutively (like SM2 LBL mode).
+
+**Data Page Title**: Roam page name for storing all plugin data (default: `roam/Supermemo`).
+
+**Auto Collapse Blocks After Review**: Automatically collapse reviewed blocks on the Roam page. In LBL mode, only the current sub-block stays expanded.
+
+**Show Review Mode Borders**: Color-coded dialog border per algorithm — green=SM2, orange=Progressive, blue=Fixed Time.
+
+**Shuffle Cards**: OFF → due cards sorted by urgency (most overdue → hardest → least mature), new cards in reverse creation order. ON → all cards randomly shuffled.
+
+**Right-to-Left (RTL) Enabled**: Enable RTL layout for Arabic, Hebrew, etc.
+
+### In-Review Controls
+
+**Algorithm Selector**: Dropdown in the footer to change the current card's algorithm on the fly (SM2 / Progressive / Fixed Time). Persists to the data page.
+
+**Interaction Selector**: Dropdown in the footer to change the current card's interaction mode (Normal / Line by Line). Persists to the data page.
+
+**Undo Learning**: When a card is already learned today, an "Undo Learning" button appears to reset its scheduling record.
+
+**Cram**: After finishing all due cards, click "Continue Cramming" to review cards without affecting scheduling. A "Cramming" badge appears in the header.
+
+**Breadcrumbs**: Toggle page hierarchy display via the 👁 eye icon in the header or the `B` key.
+
+### Cloze Deletion
+
+Use `{hide me}` curly braces to create cloze deletions. Text inside `{}` is masked when answers are hidden and revealed on "Show Answer". Roam's native `^^highlight^^` is NOT treated as cloze.
+
+### Data Migration
+
+Settings → Data Migration panel. Converts `reviewMode::` → `algorithm::` + `interaction::`, renames legacy field names to `{owner}_{purpose}` convention, merges meta blocks into sessions, migrates `lbl_progress` to independent child block sessions, and converts `FIXED_DAYS/WEEKS/MONTHS/YEARS` → `FIXED_TIME`. Safe to run multiple times.
 
 ## Architecture — First Principles
 
@@ -101,10 +145,10 @@ The system is TWO layers. No more.
 
 ### Data Model
 
-All data on a Roam page (default `roam/memo`). Single session-block architecture:
+All data on a Roam page (default `roam/Supermemo`). Single session-block architecture:
 
 ```
-roam/memo
+roam/Supermemo
 └── data
     └── ((cardUid))
         ├── [[Date]] 🟢  ← latest session = SINGLE SOURCE OF TRUTH
@@ -154,10 +198,6 @@ Fix: one session per uid, one view state, everything else derived. Bias toward *
 ### `resolveBaseForCalculation` — same-day re-scoring
 Prevents interval inflation (Good→Perfect stacking). Three rules: (1) non-same-day → use as-is, (2) same-day Forgot → use as-is, (3) same-day non-Forgot → rewind to `baseSessionData`.
 
-## Data Migration
-
-After upgrading: Settings → Data Migration. Converts `reviewMode::` → `algorithm::` + `interaction::`, renames fields to `{owner}_{purpose}`, merges FIXED_* → FIXED_TIME. Safe to run multiple times.
-
 ## Development
 
 ```bash
@@ -175,15 +215,26 @@ src/
 │   ├── session.ts           # Session, algorithms, interaction, ReviewStatus
 │   └── practice.ts          # Queue strategies (urgency sort, LBL scan)
 ├── review-runtime/
-│   ├── types.ts / selectors.ts / useReviewRuntime.ts
+│   ├── types.ts             # SessionFacts, ViewState, DeckSnapshot
+│   ├── selectors.ts         # Pure derivation selectors
+│   └── useReviewRuntime.ts  # Unified runtime hook
 ├── hooks/
 │   ├── useCardBlock.ts      # Card pipeline (normal & LBL)
 │   ├── useCurrentCardData.tsx
 │   ├── useLineByLineReview.ts  # LBL Y-axis navigation
+│   ├── useSettings.ts       # Single source of truth for settings
+│   ├── useTags.tsx          # Deck tag list from deckConfigs
+│   ├── useCloze.tsx         # {} cloze deletion rendering
 │   └── ...
-├── queries/                 # data.ts, today.ts, save.ts
-├── components/overlay/      # PracticeOverlay, Header, Footer, CardBlock, LineByLineView
-└── utils/                   # date, string, dom, async
+├── queries/                 # data.ts, today.ts, save.ts, settings.ts
+├── components/
+│   ├── overlay/             # PracticeOverlay, Header, Footer, CardBlock, LineByLineView
+│   ├── DeckConfigsTable.tsx # Table-based deck management UI
+│   ├── SettingsForm.tsx     # Settings form with all options
+│   ├── SidePanelWidget.tsx  # Sidebar review entry point
+│   └── MigrateLegacyDataPanel.tsx
+├── contexts/                # PracticeSessionContext, AlgorithmContext
+└── utils/                   # date, string, dom, async, deckConfig, deckWeight
 ```
 
 ## Privacy

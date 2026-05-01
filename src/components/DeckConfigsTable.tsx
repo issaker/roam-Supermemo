@@ -3,6 +3,7 @@ import * as Blueprint from '@blueprintjs/core';
 import styled from '@emotion/styled';
 import { DeckConfig } from '~/hooks/useSettings';
 import { redistributeWeights, equalizeWeights, validateWeight } from '~/utils/deckWeight';
+import { parseDeckConfigs } from '~/utils/deckConfig';
 import { DAILYNOTE_DECK_KEY } from '~/constants';
 import { colors } from '~/theme';
 
@@ -65,25 +66,14 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
   const isDailyNote = (name: string) => name === DAILYNOTE_DECK_KEY;
 
   const [decks, setDecks] = React.useState<DeckConfig[]>(() => {
-    try {
-      const parsed = JSON.parse(deckConfigs);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
+    return parseDeckConfigs(deckConfigs);
   });
   const [selectedIndex, setSelectedIndex] = React.useState<number | null>(null);
   const [editingNewName, setEditingNewName] = React.useState<number | null>(null);
 
   React.useEffect(() => {
-    try {
-      const parsed = JSON.parse(deckConfigs);
-      if (Array.isArray(parsed)) {
-        setDecks(parsed);
-      }
-    } catch {
-      setDecks([]);
-    }
+    const parsed = parseDeckConfigs(deckConfigs);
+    setDecks(parsed);
   }, [deckConfigs]);
 
   const emitChange = (updated: DeckConfig[]) => {

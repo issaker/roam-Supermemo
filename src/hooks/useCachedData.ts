@@ -18,6 +18,7 @@ const useCachedData = ({
   const [refetchTrigger, setRefetchTrigger] = React.useState(0);
 
   const deleteCacheDataKey = async (toDeleteKeyId: string) => {
+    if (!selectedTag) return;
     await queries.deleteCacheDataKey({ dataPageTitle, selectedTag, toDeleteKeyId });
   };
 
@@ -40,7 +41,9 @@ const useCachedData = ({
   );
   return {
     saveCacheData: async (data: { [key: string]: any }, overrides?: { [key: string]: any }) => {
-      await queries.saveCacheData({ dataPageTitle, data, selectedTag, ...overrides });
+      const tag = overrides?.selectedTag || selectedTag;
+      if (!tag) return;
+      await queries.saveCacheData({ dataPageTitle, data, selectedTag: tag });
       setRefetchTrigger((prev) => prev + 1);
     },
     deleteCacheDataKey,

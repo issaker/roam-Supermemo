@@ -26,6 +26,10 @@ export const subtractDays = (date: Date, days: number): Date => {
   return result;
 };
 
+export const normalizeToDay = (date: Date): Date => {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+};
+
 export const daysBetween = (d1: Date, d2: Date) => {
   const startOfD1 = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate());
   const startOfD2 = new Date(d2.getFullYear(), d2.getMonth(), d2.getDate());
@@ -33,7 +37,7 @@ export const daysBetween = (d1: Date, d2: Date) => {
   return Math.floor(Math.abs((startOfD1.getTime() - startOfD2.getTime()) / oneDay));
 };
 
-export const fromNow = (date) => {
+const fromNow = (date) => {
   return dayjs(date).fromNow();
 };
 

@@ -6,9 +6,9 @@
  *   2. ViewState     — where the user is looking
  *
  * The primary queue is state, built once at session start from initialUids.
- * Cards are never removed from the queue after grading.  The only
- * modifications are reinserts (Forgot / LBL-Next) which splice duplicate
- * entries directly into the queue.  Navigation is purely index-based.
+ * Completed cards are removed from the queue on data refresh, and currentIndex
+ * is adjusted to maintain the user's position. Forgot and LBL-Next reinserts
+ * splice duplicate entries directly into the queue state.
  */
 import { Today } from '~/models/practice';
 import { NewSession, RecordUid, Session } from '~/models/session';

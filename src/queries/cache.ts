@@ -8,7 +8,7 @@ import {
   getOrCreatePage,
 } from '~/queries/utils';
 
-export const saveCacheData = async ({ dataPageTitle, data, selectedTag }) => {
+export const saveCacheData = async ({ dataPageTitle, data, selectedTag }: { dataPageTitle: string; data: Record<string, any>; selectedTag: string }) => {
   await getOrCreatePage(dataPageTitle);
   const dataBlockUid = await getOrCreateBlockOnPage(dataPageTitle, 'cache', -1, {
     open: false,
@@ -39,7 +39,7 @@ export const saveCacheData = async ({ dataPageTitle, data, selectedTag }) => {
   }
 };
 
-export const deleteCacheDataKey = async ({ dataPageTitle, selectedTag, toDeleteKeyId }) => {
+export const deleteCacheDataKey = async ({ dataPageTitle, selectedTag, toDeleteKeyId }: { dataPageTitle: string; selectedTag: string; toDeleteKeyId: string }) => {
   await getOrCreatePage(dataPageTitle);
   const dataBlockUid = await getOrCreateBlockOnPage(dataPageTitle, 'cache', -1, {
     open: false,

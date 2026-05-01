@@ -91,12 +91,12 @@ App (root)
 - **roam/js cold start:** On page reload, `extensionAPI` is empty → `loadSettingsFromPage()` restores from Roam page
 - **`extension.tsx` layer:** Wraps `extensionAPI.settings` with in-memory overlay for roam/js compatibility
 - **`updateSetting()`** is the single entry point — writes extensionAPI → React state → schedules page sync
-- **`roamMemoSettingsChanged`** custom event: dispatched on every `set()` call, listened by `useSettings` to sync React state
+- **`roamSupermemoSettingsChanged`** custom event: dispatched on every `set()` call, listened by `useSettings` to sync React state
 
 ## Roam Data Page Structure
 
 ```
-roam/memo (page)
+roam/Supermemo (page)
 ├── data (heading 3)
 │   └── ((cardUid))
 │       ├── [[Date]] 🟢  ← latest session = SINGLE SOURCE OF TRUTH

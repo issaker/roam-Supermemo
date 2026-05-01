@@ -1,4 +1,4 @@
-# Roam Memo Theme System
+# Roam Supermemo Theme System
 
 ## Design Principle
 
