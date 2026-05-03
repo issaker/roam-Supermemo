@@ -22,10 +22,6 @@ interface SidePanelWidgetProps {
 const SidePanelWidget = ({ onClickCallback, tagCardSets }: SidePanelWidgetProps) => {
   const combinedDue = Object.values(tagCardSets).reduce((sum, cs) => sum + cs.dueUids.length, 0);
   const combinedNew = Object.values(tagCardSets).reduce((sum, cs) => sum + cs.newUids.length, 0);
-  const combinedCompleted = Object.values(tagCardSets).reduce(
-    (sum, cs) => sum + cs.completedUids.length,
-    0
-  );
   const allDoneToday = combinedDue + combinedNew === 0;
 
   const iconClass = allDoneToday ? 'bp3-icon-confirm' : 'bp3-icon-box';

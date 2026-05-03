@@ -22,13 +22,24 @@ import {
 } from '~/models/session';
 
 const DEBUG_MIGRATION = false;
-const debugLog = (...args: any[]) => { if (DEBUG_MIGRATION) console.log(...args); };
+const debugLog = (...args: any[]) => {
+  if (DEBUG_MIGRATION) console.log(...args);
+};
 
-const LEGACY_MODE_TO_CONFIG: Record<string, { algorithm: SchedulingAlgorithm; interaction: InteractionStyle }> = {
+const LEGACY_MODE_TO_CONFIG: Record<
+  string,
+  { algorithm: SchedulingAlgorithm; interaction: InteractionStyle }
+> = {
   SPACED_INTERVAL: { algorithm: SchedulingAlgorithm.SM2, interaction: InteractionStyle.NORMAL },
   SPACED_INTERVAL_LBL: { algorithm: SchedulingAlgorithm.SM2, interaction: InteractionStyle.LBL },
-  FIXED_PROGRESSIVE: { algorithm: SchedulingAlgorithm.PROGRESSIVE, interaction: InteractionStyle.NORMAL },
-  FIXED_PROGRESSIVE_LBL: { algorithm: SchedulingAlgorithm.PROGRESSIVE, interaction: InteractionStyle.LBL },
+  FIXED_PROGRESSIVE: {
+    algorithm: SchedulingAlgorithm.PROGRESSIVE,
+    interaction: InteractionStyle.NORMAL,
+  },
+  FIXED_PROGRESSIVE_LBL: {
+    algorithm: SchedulingAlgorithm.PROGRESSIVE,
+    interaction: InteractionStyle.LBL,
+  },
   FIXED_DAYS: { algorithm: SchedulingAlgorithm.FIXED_TIME, interaction: InteractionStyle.NORMAL },
   FIXED_WEEKS: { algorithm: SchedulingAlgorithm.FIXED_TIME, interaction: InteractionStyle.NORMAL },
   FIXED_MONTHS: { algorithm: SchedulingAlgorithm.FIXED_TIME, interaction: InteractionStyle.NORMAL },
@@ -37,7 +48,7 @@ const LEGACY_MODE_TO_CONFIG: Record<string, { algorithm: SchedulingAlgorithm; in
 import { updateReviewConfig, deduplicateSessionFields } from '~/queries';
 import { getPluginPageData, SESSION_SNAPSHOT_KEYS } from '~/queries/data';
 import { getStringBetween, parseConfigString } from '~/utils/string';
-import * as asyncUtils from '~/utils/async';
+import { sleep } from '~/utils/async';
 import { progressiveInterval } from '~/practice';
 
 const CARD_META_BLOCK_NAME = 'meta';
@@ -261,7 +272,9 @@ const scanReviewModeFields = (cardChildren: any[] = []): ReviewModeFieldInfo[] =
   return fields;
 };
 
-const hasAlgorithmInteractionFields = (cardChildren: any[] = []): { hasAlgorithm: boolean; hasInteraction: boolean } => {
+const hasAlgorithmInteractionFields = (
+  cardChildren: any[] = []
+): { hasAlgorithm: boolean; hasInteraction: boolean } => {
   const latestSession = findLatestSessionBlock(cardChildren);
   let hasAlgorithm = false;
   let hasInteraction = false;
@@ -279,7 +292,9 @@ const hasAlgorithmInteractionFields = (cardChildren: any[] = []): { hasAlgorithm
 };
 
 const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) => {
-  const [status, setStatus] = React.useState<'idle' | 'scanning' | 'ready' | 'running' | 'done' | 'error'>('idle');
+  const [status, setStatus] = React.useState<
+    'idle' | 'scanning' | 'ready' | 'running' | 'done' | 'error'
+  >('idle');
   const [progress, setProgress] = React.useState({ total: 0, migrated: 0, skipped: 0, phase: '' });
   const [errorDetail, setErrorDetail] = React.useState('');
   const [scanResult, setScanResult] = React.useState<ScanResult | null>(null);
@@ -318,9 +333,16 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
       let cardsWithLegacyFields = 0;
 
       const LEGACY_FIELD_NAMES = new Set([
-        'progressiveRepetitions', 'progressiveInterval', 'intervalMultiplier',
-        'intervalMultiplierType', 'repetitions', 'interval', 'eFactor', 'grade',
-        'lineByLineReview', 'lbl_progress',
+        'progressiveRepetitions',
+        'progressiveInterval',
+        'intervalMultiplier',
+        'intervalMultiplierType',
+        'repetitions',
+        'interval',
+        'eFactor',
+        'grade',
+        'lineByLineReview',
+        'lbl_progress',
       ]);
 
       const hasLegacyFieldNames = (cardChildren: any[] = []): boolean => {
@@ -361,16 +383,26 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
         const sessions = Array.isArray(cardData) ? cardData : [cardData];
         const latestSession = sessions[sessions.length - 1];
 
-        const resolvedConfig = resolveReviewConfig(latestSession.algorithm, latestSession.interaction);
-        const resolvedMode = LEGACY_MODE_TO_CONFIG[`${resolvedConfig.algorithm}_${resolvedConfig.interaction}`]
+        const resolvedConfig = resolveReviewConfig(
+          latestSession.algorithm,
+          latestSession.interaction
+        );
+        const resolvedMode = LEGACY_MODE_TO_CONFIG[
+          `${resolvedConfig.algorithm}_${resolvedConfig.interaction}`
+        ]
           ? `${resolvedConfig.algorithm}_${resolvedConfig.interaction}`
           : 'SPACED_INTERVAL';
         const isLineByLine =
-          (latestSession as any)?.lineByLineReview === 'Y' || isLBLReviewMode(resolvedConfig.interaction);
+          (latestSession as any)?.lineByLineReview === 'Y' ||
+          isLBLReviewMode(resolvedConfig.interaction);
         const finalMode =
-          isLineByLine && resolvedConfig.algorithm === SchedulingAlgorithm.SM2 && resolvedConfig.interaction === InteractionStyle.NORMAL
+          isLineByLine &&
+          resolvedConfig.algorithm === SchedulingAlgorithm.SM2 &&
+          resolvedConfig.interaction === InteractionStyle.NORMAL
             ? 'SPACED_INTERVAL_LBL'
-            : isLineByLine && resolvedConfig.algorithm === SchedulingAlgorithm.PROGRESSIVE && resolvedConfig.interaction === InteractionStyle.NORMAL
+            : isLineByLine &&
+              resolvedConfig.algorithm === SchedulingAlgorithm.PROGRESSIVE &&
+              resolvedConfig.interaction === InteractionStyle.NORMAL
             ? 'FIXED_PROGRESSIVE_LBL'
             : resolvedMode;
 
@@ -484,16 +516,26 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
         const sessions = Array.isArray(cardData) ? cardData : [cardData];
         const latestSession = sessions[sessions.length - 1];
 
-        const resolvedConfig = resolveReviewConfig(latestSession.algorithm, latestSession.interaction);
-        const resolvedMode = LEGACY_MODE_TO_CONFIG[`${resolvedConfig.algorithm}_${resolvedConfig.interaction}`]
+        const resolvedConfig = resolveReviewConfig(
+          latestSession.algorithm,
+          latestSession.interaction
+        );
+        const resolvedMode = LEGACY_MODE_TO_CONFIG[
+          `${resolvedConfig.algorithm}_${resolvedConfig.interaction}`
+        ]
           ? `${resolvedConfig.algorithm}_${resolvedConfig.interaction}`
           : 'SPACED_INTERVAL';
         const isLineByLine =
-          (latestSession as any)?.lineByLineReview === 'Y' || isLBLReviewMode(resolvedConfig.interaction);
+          (latestSession as any)?.lineByLineReview === 'Y' ||
+          isLBLReviewMode(resolvedConfig.interaction);
         const finalMode =
-          isLineByLine && resolvedConfig.algorithm === SchedulingAlgorithm.SM2 && resolvedConfig.interaction === InteractionStyle.NORMAL
+          isLineByLine &&
+          resolvedConfig.algorithm === SchedulingAlgorithm.SM2 &&
+          resolvedConfig.interaction === InteractionStyle.NORMAL
             ? 'SPACED_INTERVAL_LBL'
-            : isLineByLine && resolvedConfig.algorithm === SchedulingAlgorithm.PROGRESSIVE && resolvedConfig.interaction === InteractionStyle.NORMAL
+            : isLineByLine &&
+              resolvedConfig.algorithm === SchedulingAlgorithm.PROGRESSIVE &&
+              resolvedConfig.interaction === InteractionStyle.NORMAL
             ? 'FIXED_PROGRESSIVE_LBL'
             : resolvedMode;
 
@@ -507,7 +549,8 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
           }
         }
 
-        const { hasAlgorithm: hasExistingAlgorithm } = hasAlgorithmInteractionFields(rawCardChildren);
+        const { hasAlgorithm: hasExistingAlgorithm } =
+          hasAlgorithmInteractionFields(rawCardChildren);
 
         tasks.push({
           cardUid,
@@ -560,14 +603,18 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
               algorithm: task.hasExistingAlgorithm ? undefined : config?.algorithm,
               interaction: config?.interaction,
             });
-            debugLog(`[Memo] Phase 1: card ${task.cardUid} — wrote reviewMode (mode=${task.resolvedMode}, algorithmPreserved=${task.hasExistingAlgorithm})`);
+            debugLog(
+              `[Memo] Phase 1: card ${task.cardUid} — wrote reviewMode (mode=${task.resolvedMode}, algorithmPreserved=${task.hasExistingAlgorithm})`
+            );
           }
 
           if (task.needsDuplicateCleanup && task.duplicateBlockUids.length > 0) {
             for (const uid of task.duplicateBlockUids) {
               await window.roamAlphaAPI.deleteBlock({ block: { uid } });
             }
-            debugLog(`[Memo] Phase 1: card ${task.cardUid} — cleaned ${task.duplicateBlockUids.length} duplicate blocks`);
+            debugLog(
+              `[Memo] Phase 1: card ${task.cardUid} — cleaned ${task.duplicateBlockUids.length} duplicate blocks`
+            );
           }
 
           if (task.needsMetaMerge && task.latestSessionBlockUid) {
@@ -637,7 +684,9 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
             await window.roamAlphaAPI.deleteBlock({ block: { uid: allSessionUids[i] } });
             deleted++;
           } catch (err) {
-            const msg = `Session cleanup block ${allSessionUids[i]}: ${err instanceof Error ? err.message : String(err)}`;
+            const msg = `Session cleanup block ${allSessionUids[i]}: ${
+              err instanceof Error ? err.message : String(err)
+            }`;
             console.error(`[Memo] Phase 2 session cleanup error:`, err);
             errMsgs.push(msg);
           }
@@ -695,10 +744,14 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
               await window.roamAlphaAPI.deleteBlock({ block: { uid: field.uid } });
             }
 
-            debugLog(`[Memo] Phase 3: card ${task.cardUid} — reviewMode=${task.resolvedMode} → algorithm=${task.algorithm}, interaction=${task.interaction} (SUCCESS)`);
+            debugLog(
+              `[Memo] Phase 3: card ${task.cardUid} — reviewMode=${task.resolvedMode} → algorithm=${task.algorithm}, interaction=${task.interaction} (SUCCESS)`
+            );
             phase3Converted++;
           } catch (err) {
-            const msg = `Phase 3 card ${task.cardUid}: ${err instanceof Error ? err.message : String(err)}`;
+            const msg = `Phase 3 card ${task.cardUid}: ${
+              err instanceof Error ? err.message : String(err)
+            }`;
             console.error(`[Memo] Phase 3 migration error on card ${task.cardUid}:`, err);
             errMsgs.push(msg);
             phase3Errors++;
@@ -708,7 +761,9 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
             total,
             migrated,
             skipped,
-            phase: `Phase 3: Converting reviewMode (${phase3Converted + phase3Skipped + phase3Errors}/${conversionTasks.length})`,
+            phase: `Phase 3: Converting reviewMode (${
+              phase3Converted + phase3Skipped + phase3Errors
+            }/${conversionTasks.length})`,
           });
 
           if ((i + 1) % BATCH_SIZE === 0) {
@@ -734,7 +789,9 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
 
       try {
         const dedupResult = await deduplicateSessionFields({ dataPageTitle });
-        debugLog(`[Memo] Phase 4 dedup: cleaned=${dedupResult.cleaned}, errors=${dedupResult.errors}`);
+        debugLog(
+          `[Memo] Phase 4 dedup: cleaned=${dedupResult.cleaned}, errors=${dedupResult.errors}`
+        );
       } catch (err) {
         console.error('[Memo] Phase 4 dedup error:', err);
         errMsgs.push(`Phase 4 dedup: ${err instanceof Error ? err.message : String(err)}`);
@@ -756,11 +813,24 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
         algorithm: string | undefined
       ): string => {
         if (multiplierType === 'Progressive') return 'progressive_interval';
-        if (multiplierType === 'Fixed' || multiplierType === 'FixedDays' || multiplierType === 'FixedWeeks'
-          || multiplierType === 'FixedMonths' || multiplierType === 'FixedYears') return 'fixed_multiplier';
-        if (algorithm === 'PROGRESSIVE' || algorithm === 'FIXED_PROGRESSIVE') return 'progressive_interval';
-        if (algorithm === 'FIXED_TIME' || algorithm === 'FIXED_DAYS' || algorithm === 'FIXED_WEEKS'
-          || algorithm === 'FIXED_MONTHS' || algorithm === 'FIXED_YEARS') return 'fixed_multiplier';
+        if (
+          multiplierType === 'Fixed' ||
+          multiplierType === 'FixedDays' ||
+          multiplierType === 'FixedWeeks' ||
+          multiplierType === 'FixedMonths' ||
+          multiplierType === 'FixedYears'
+        )
+          return 'fixed_multiplier';
+        if (algorithm === 'PROGRESSIVE' || algorithm === 'FIXED_PROGRESSIVE')
+          return 'progressive_interval';
+        if (
+          algorithm === 'FIXED_TIME' ||
+          algorithm === 'FIXED_DAYS' ||
+          algorithm === 'FIXED_WEEKS' ||
+          algorithm === 'FIXED_MONTHS' ||
+          algorithm === 'FIXED_YEARS'
+        )
+          return 'fixed_multiplier';
         return 'fixed_multiplier';
       };
 
@@ -810,8 +880,10 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
             fieldKeys.add(key);
           }
 
-          const algorithmField = collectedFields.find(f => f.key === 'algorithm');
-          const multiplierTypeField = collectedFields.find(f => f.key === 'intervalMultiplierType');
+          const algorithmField = collectedFields.find((f) => f.key === 'algorithm');
+          const multiplierTypeField = collectedFields.find(
+            (f) => f.key === 'intervalMultiplierType'
+          );
           const intervalMultiplierTarget = resolveIntervalMultiplierTarget(
             multiplierTypeField?.value,
             algorithmField?.value
@@ -826,7 +898,9 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
                 phase4Deleted++;
               } catch (err) {
                 console.error(`[Memo] Phase 4 delete error for ${field.key}:`, err);
-                errMsgs.push(`Phase 4 delete ${field.key}: ${err instanceof Error ? err.message : String(err)}`);
+                errMsgs.push(
+                  `Phase 4 delete ${field.key}: ${err instanceof Error ? err.message : String(err)}`
+                );
                 phase4Errors++;
               }
               continue;
@@ -840,7 +914,9 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
                 phase4ReadConverted++;
               } catch (err) {
                 console.error(`[Memo] Phase 4 READ→LBL error:`, err);
-                errMsgs.push(`Phase 4 READ→LBL: ${err instanceof Error ? err.message : String(err)}`);
+                errMsgs.push(
+                  `Phase 4 READ→LBL: ${err instanceof Error ? err.message : String(err)}`
+                );
                 phase4Errors++;
               }
               continue;
@@ -854,7 +930,11 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
                   phase4Deleted++;
                 } catch (err) {
                   console.error(`[Memo] Phase 4 delete intervalMultiplier error:`, err);
-                  errMsgs.push(`Phase 4 delete intervalMultiplier: ${err instanceof Error ? err.message : String(err)}`);
+                  errMsgs.push(
+                    `Phase 4 delete intervalMultiplier: ${
+                      err instanceof Error ? err.message : String(err)
+                    }`
+                  );
                   phase4Errors++;
                 }
               } else {
@@ -866,7 +946,11 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
                   phase4Renamed++;
                 } catch (err) {
                   console.error(`[Memo] Phase 4 rename intervalMultiplier error:`, err);
-                  errMsgs.push(`Phase 4 rename intervalMultiplier: ${err instanceof Error ? err.message : String(err)}`);
+                  errMsgs.push(
+                    `Phase 4 rename intervalMultiplier: ${
+                      err instanceof Error ? err.message : String(err)
+                    }`
+                  );
                   phase4Errors++;
                 }
               }
@@ -880,8 +964,15 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
                   await window.roamAlphaAPI.deleteBlock({ block: { uid: field.uid } });
                   phase4Deleted++;
                 } catch (err) {
-                  console.error(`[Memo] Phase 4 delete ${field.key} (target ${targetKey} exists) error:`, err);
-                  errMsgs.push(`Phase 4 delete ${field.key}: ${err instanceof Error ? err.message : String(err)}`);
+                  console.error(
+                    `[Memo] Phase 4 delete ${field.key} (target ${targetKey} exists) error:`,
+                    err
+                  );
+                  errMsgs.push(
+                    `Phase 4 delete ${field.key}: ${
+                      err instanceof Error ? err.message : String(err)
+                    }`
+                  );
                   phase4Errors++;
                 }
               } else {
@@ -893,7 +984,11 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
                   phase4Renamed++;
                 } catch (err) {
                   console.error(`[Memo] Phase 4 rename error for ${field.key}:`, err);
-                  errMsgs.push(`Phase 4 rename ${field.key}: ${err instanceof Error ? err.message : String(err)}`);
+                  errMsgs.push(
+                    `Phase 4 rename ${field.key}: ${
+                      err instanceof Error ? err.message : String(err)
+                    }`
+                  );
                   phase4Errors++;
                 }
               }
@@ -902,10 +997,18 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
           }
 
           const effectiveAlgorithm = algorithmField?.value;
-          const hasProgressiveInterval = fieldKeys.has('progressive_interval') || fieldKeys.has('progressiveInterval') || newKeysCreated.has('progressive_interval');
-          if ((effectiveAlgorithm === 'PROGRESSIVE' || effectiveAlgorithm === 'FIXED_PROGRESSIVE') && !hasProgressiveInterval && sessionBlock.uid) {
-            const progRepsField = collectedFields.find(f => f.key === 'progressive_repetitions')
-              ?? collectedFields.find(f => f.key === 'progressiveRepetitions');
+          const hasProgressiveInterval =
+            fieldKeys.has('progressive_interval') ||
+            fieldKeys.has('progressiveInterval') ||
+            newKeysCreated.has('progressive_interval');
+          if (
+            (effectiveAlgorithm === 'PROGRESSIVE' || effectiveAlgorithm === 'FIXED_PROGRESSIVE') &&
+            !hasProgressiveInterval &&
+            sessionBlock.uid
+          ) {
+            const progRepsField =
+              collectedFields.find((f) => f.key === 'progressive_repetitions') ??
+              collectedFields.find((f) => f.key === 'progressiveRepetitions');
             if (progRepsField) {
               try {
                 const interval = progressiveInterval(Number(progRepsField.value));
@@ -916,7 +1019,11 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
                 phase4Created++;
               } catch (err) {
                 console.error(`[Memo] Phase 4 create progressive_interval error:`, err);
-                errMsgs.push(`Phase 4 create progressive_interval: ${err instanceof Error ? err.message : String(err)}`);
+                errMsgs.push(
+                  `Phase 4 create progressive_interval: ${
+                    err instanceof Error ? err.message : String(err)
+                  }`
+                );
                 phase4Errors++;
               }
             }
@@ -959,7 +1066,11 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
           [?pluginPageChildren :block/string ?dataBlockName]
         ]`;
 
-        const compactQueryResults = await window.roamAlphaAPI.q(compactQuery, dataPageTitle, 'data');
+        const compactQueryResults = await window.roamAlphaAPI.q(
+          compactQuery,
+          dataPageTitle,
+          'data'
+        );
         const compactDataChildren = compactQueryResults.map((arr) => arr[0])[0]?.children || [];
 
         for (const cardChild of compactDataChildren) {
@@ -1035,7 +1146,9 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
               total,
               migrated,
               skipped,
-              phase: `Phase 5: Compacting snapshots (${phase5Compacted + phase5Skipped + phase5Errors}/${compactDataChildren.length})`,
+              phase: `Phase 5: Compacting snapshots (${
+                phase5Compacted + phase5Skipped + phase5Errors
+              }/${compactDataChildren.length})`,
             });
             await sleep(BATCH_DELAY_MS);
           } else {
@@ -1080,13 +1193,20 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
             [?dataBlock :block/string ?dataBlockName]
           ]`;
 
-          const lblDataBlockResult = await window.roamAlphaAPI.q(lblDataBlockQuery, lblDataPageUid, 'data');
+          const lblDataBlockResult = await window.roamAlphaAPI.q(
+            lblDataBlockQuery,
+            lblDataPageUid,
+            'data'
+          );
 
           if (lblDataBlockResult && lblDataBlockResult.length && lblDataBlockResult[0][0]) {
             const lblDataBlock = lblDataBlockResult[0][0];
             const lblCardEntries = lblDataBlock.children || [];
 
-            const lblPluginPageData = await getPluginPageData({ dataPageTitle, limitToLatest: true });
+            const lblPluginPageData = await getPluginPageData({
+              dataPageTitle,
+              limitToLatest: true,
+            });
 
             for (const cardEntry of lblCardEntries) {
               const cardString = cardEntry.string || '';
@@ -1127,8 +1247,15 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
                         await window.roamAlphaAPI.deleteBlock({ block: { uid: fieldBlock.uid } });
                         phase6Migrated++;
                       } catch (err) {
-                        console.error(`[Memo] Phase 6 delete lbl_progress error for card ${cardUid}:`, err);
-                        errMsgs.push(`Phase 6 delete lbl_progress card ${cardUid}: ${err instanceof Error ? err.message : String(err)}`);
+                        console.error(
+                          `[Memo] Phase 6 delete lbl_progress error for card ${cardUid}:`,
+                          err
+                        );
+                        errMsgs.push(
+                          `Phase 6 delete lbl_progress card ${cardUid}: ${
+                            err instanceof Error ? err.message : String(err)
+                          }`
+                        );
                         phase6Errors++;
                       }
                     }
@@ -1219,25 +1346,37 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
                   }
 
                   const sm2Interval = childData.sm2_interval ?? childData.interval;
-                  if (sm2Interval !== undefined) fieldsToCreate.push(`sm2_interval:: ${sm2Interval}`);
+                  if (sm2Interval !== undefined)
+                    fieldsToCreate.push(`sm2_interval:: ${sm2Interval}`);
 
                   const sm2Repetitions = childData.sm2_repetitions ?? childData.repetitions;
-                  if (sm2Repetitions !== undefined) fieldsToCreate.push(`sm2_repetitions:: ${sm2Repetitions}`);
+                  if (sm2Repetitions !== undefined)
+                    fieldsToCreate.push(`sm2_repetitions:: ${sm2Repetitions}`);
 
                   const sm2EFactor = childData.sm2_eFactor ?? childData.eFactor;
-                  if (sm2EFactor !== undefined) fieldsToCreate.push(`sm2_eFactor:: ${typeof sm2EFactor === 'number' ? sm2EFactor.toFixed(2) : sm2EFactor}`);
+                  if (sm2EFactor !== undefined)
+                    fieldsToCreate.push(
+                      `sm2_eFactor:: ${
+                        typeof sm2EFactor === 'number' ? sm2EFactor.toFixed(2) : sm2EFactor
+                      }`
+                    );
 
                   const sm2Grade = childData.sm2_grade ?? childData.grade;
                   if (sm2Grade !== undefined) fieldsToCreate.push(`sm2_grade:: ${sm2Grade}`);
 
-                  const progReps = childData.progressive_repetitions ?? childData.progressiveRepetitions;
-                  if (progReps !== undefined) fieldsToCreate.push(`progressive_repetitions:: ${progReps}`);
+                  const progReps =
+                    childData.progressive_repetitions ?? childData.progressiveRepetitions;
+                  if (progReps !== undefined)
+                    fieldsToCreate.push(`progressive_repetitions:: ${progReps}`);
 
-                  const progInterval = childData.progressive_interval ?? childData.progressiveInterval;
+                  const progInterval =
+                    childData.progressive_interval ?? childData.progressiveInterval;
                   if (progInterval !== undefined) {
                     fieldsToCreate.push(`progressive_interval:: ${progInterval}`);
                   } else if (progReps !== undefined) {
-                    fieldsToCreate.push(`progressive_interval:: ${progressiveInterval(Number(progReps))}`);
+                    fieldsToCreate.push(
+                      `progressive_interval:: ${progressiveInterval(Number(progReps))}`
+                    );
                   }
 
                   for (const fieldString of fieldsToCreate) {
@@ -1270,7 +1409,9 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
                 }
               } catch (err) {
                 console.error(`[Memo] Phase 6 LBL migration error for card ${cardUid}:`, err);
-                errMsgs.push(`Phase 6 card ${cardUid}: ${err instanceof Error ? err.message : String(err)}`);
+                errMsgs.push(
+                  `Phase 6 card ${cardUid}: ${err instanceof Error ? err.message : String(err)}`
+                );
                 phase6Errors++;
               }
             }
@@ -1357,7 +1498,10 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
               try {
                 await window.roamAlphaAPI.createBlock({
                   location: { 'parent-uid': sessionBlock.uid, order: -1 },
-                  block: { string: `fixed_unit:: ${LEGACY_FIXED_MAP[legacyAlgorithmValue]}`, open: false },
+                  block: {
+                    string: `fixed_unit:: ${LEGACY_FIXED_MAP[legacyAlgorithmValue]}`,
+                    open: false,
+                  },
                 });
                 phase7Converted++;
               } catch (err) {
@@ -1405,7 +1549,12 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
         errors: phase7Errors,
       });
 
-      setProgress({ total, migrated, skipped, phase: `Done (Phase 4: ${phase4Renamed} renamed, ${phase4Deleted} deleted, ${phase4Created} created)` });
+      setProgress({
+        total,
+        migrated,
+        skipped,
+        phase: `Done (Phase 4: ${phase4Renamed} renamed, ${phase4Deleted} deleted, ${phase4Created} created)`,
+      });
 
       const totalErrors = errors + phase3Errors + phase4Errors + phase6Errors;
       if (totalErrors > 0) {
@@ -1431,33 +1580,34 @@ const MigrateLegacyDataPanel = ({ dataPageTitle }: { dataPageTitle: string }) =>
         cancelButtonText="Cancel"
         confirmButtonText="Migrate"
         intent="warning"
-        onConfirm={() => { runMigration(); }}
-        onCancel={() => { setShowConfirm(false); }}
+        onConfirm={() => {
+          runMigration();
+        }}
+        onCancel={() => {
+          setShowConfirm(false);
+        }}
       >
         <p>
           This migration will convert <strong>reviewMode</strong> fields to the new{' '}
-<strong>algorithm</strong> + <strong>interaction</strong> format, rename legacy field names,
-delete redundant fields, migrate legacy <strong>lbl_progress</strong> data to independent
-child block sessions, and convert <strong>FIXED_DAYS/WEEKS/MONTHS/YEARS</strong> to{' '}
-<strong>FIXED_TIME</strong> with the appropriate <strong>fixed_unit</strong> field.
+          <strong>algorithm</strong> + <strong>interaction</strong> format, rename legacy field
+          names, delete redundant fields, migrate legacy <strong>lbl_progress</strong> data to
+          independent child block sessions, and convert{' '}
+          <strong>FIXED_DAYS/WEEKS/MONTHS/YEARS</strong> to <strong>FIXED_TIME</strong> with the
+          appropriate <strong>fixed_unit</strong> field.
         </p>
         {scanResult && (
           <p>
             <strong>{scanResult.cardsNeedingConversion}</strong> cards need reviewMode conversion.{' '}
-            <strong>{scanResult.cardsWithLegacyFields}</strong> cards have legacy field names to rename/delete.{' '}
-            <strong>{scanResult.cardsAlreadyConverted}</strong> cards already have algorithm +
-            interaction fields.
+            <strong>{scanResult.cardsWithLegacyFields}</strong> cards have legacy field names to
+            rename/delete. <strong>{scanResult.cardsAlreadyConverted}</strong> cards already have
+            algorithm + interaction fields.
           </p>
         )}
       </Alert>
 
       {(status === 'idle' || status === 'ready') && (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <button
-            className="bp3-button"
-            onClick={runScan}
-            style={{ fontSize: '12px' }}
-          >
+          <button className="bp3-button" onClick={runScan} style={{ fontSize: '12px' }}>
             Scan for Migration
           </button>
           {scanResult && (
@@ -1516,7 +1666,15 @@ child block sessions, and convert <strong>FIXED_DAYS/WEEKS/MONTHS/YEARS</strong>
             </div>
           )}
           {errorMessages.length > 0 && (
-            <div style={{ fontSize: '11px', color: '#a66921', marginTop: '4px', maxHeight: '120px', overflowY: 'auto' }}>
+            <div
+              style={{
+                fontSize: '11px',
+                color: '#a66921',
+                marginTop: '4px',
+                maxHeight: '120px',
+                overflowY: 'auto',
+              }}
+            >
               {errorMessages.slice(0, 10).map((msg, idx) => (
                 <div key={idx}>{msg}</div>
               ))}
@@ -1545,7 +1703,15 @@ child block sessions, and convert <strong>FIXED_DAYS/WEEKS/MONTHS/YEARS</strong>
             Migration failed. {errorDetail || 'Check the console for details.'}
           </div>
           {errorMessages.length > 0 && (
-            <div style={{ fontSize: '11px', color: '#c23030', marginTop: '4px', maxHeight: '120px', overflowY: 'auto' }}>
+            <div
+              style={{
+                fontSize: '11px',
+                color: '#c23030',
+                marginTop: '4px',
+                maxHeight: '120px',
+                overflowY: 'auto',
+              }}
+            >
               {errorMessages.slice(0, 10).map((msg, idx) => (
                 <div key={idx}>{msg}</div>
               ))}
