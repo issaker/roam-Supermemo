@@ -45,7 +45,12 @@ import {
   getOrCreateChildBlock,
   getOrCreatePage,
 } from '~/queries/utils';
-import { SESSION_SNAPSHOT_KEYS, getChildSessionData, undoLatestSession } from '~/queries/data';
+import {
+  SESSION_SNAPSHOT_KEYS,
+  getChildSessionData,
+  undoLatestSession,
+  getSortedDateBlocks,
+} from '~/queries/data';
 
 const NUMERIC_SESSION_KEYS = [
   'sm2_grade',
@@ -92,21 +97,7 @@ const upsertLatestSessionField = async ({
   key: string;
   value: string;
 }) => {
-  const cardChildren = await window.roamAlphaAPI.q(
-    `[:find (pull ?card [:block/children :block/uid {:block/children [:block/uid :block/string :block/order {:block/children [:block/uid :block/string :block/order]}]}])
-         :in $ ?cardUid
-         :where [?card :block/uid ?cardUid]]`,
-    cardDataBlockUid
-  );
-
-  const children = cardChildren?.[0]?.[0]?.children || [];
-  const dateBlocks = children
-    .filter((c) => {
-      if (!c?.string) return false;
-      const dateStr = stringUtils.getStringBetween(c.string, '[[', ']]');
-      return !!stringUtils.parseRoamDateString(dateStr);
-    })
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const dateBlocks = await getSortedDateBlocks(cardDataBlockUid);
 
   if (!dateBlocks.length) {
     const dateStr = stringUtils.dateToRoamDateString(new Date());
@@ -151,7 +142,17 @@ const upsertLatestSessionField = async ({
  * Missing fields are backfilled from the latest existing session block,
  * preventing data loss when switching algorithms or after undo operations.
  */
-export const savePracticeData = async ({ refUid, dataPageTitle, dateCreated, ...data }: { refUid: string; dataPageTitle: string; dateCreated?: Date; [key: string]: any }) => {
+export const savePracticeData = async ({
+  refUid,
+  dataPageTitle,
+  dateCreated,
+  ...data
+}: {
+  refUid: string;
+  dataPageTitle: string;
+  dateCreated?: Date;
+  [key: string]: any;
+}) => {
   await getOrCreatePage(dataPageTitle);
   const dataBlockUid = await getOrCreateBlockOnPage(dataPageTitle, 'data', -1, {
     open: false,
@@ -167,21 +168,7 @@ export const savePracticeData = async ({ refUid, dataPageTitle, dateCreated, ...
   const emoji = getEmojiFromGrade(data.sm2_grade, data.algorithm);
   const sessionBlockTitle = `[[${dateCreatedRoamDateString}]] ${emoji}`;
 
-  const existingCardChildren = await window.roamAlphaAPI.q(
-    `[:find (pull ?card [:block/children :block/uid {:block/children [:block/uid :block/string :block/order {:block/children [:block/uid :block/string :block/order]}]}])
-         :in $ ?cardUid
-         :where [?card :block/uid ?cardUid]]`,
-    cardDataBlockUid
-  );
-
-  const children = existingCardChildren?.[0]?.[0]?.children || [];
-  const dateBlocks = children
-    .filter((c) => {
-      if (!c?.string) return false;
-      const dateStr = stringUtils.getStringBetween(c.string, '[[', ']]');
-      return !!stringUtils.parseRoamDateString(dateStr);
-    })
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const dateBlocks = await getSortedDateBlocks(cardDataBlockUid);
 
   if (dateBlocks.length > 0) {
     const latestBlock = dateBlocks[0];
@@ -241,18 +228,9 @@ export const savePracticeData = async ({ refUid, dataPageTitle, dateCreated, ...
   }
 };
 
-/**
- * Update the parent LBL block's nextDueDate based on child block sessions.
- * Called after grading a child block in LBL mode.
- *
- * Logic:
- *   - If any child block has no session or is due → nextDueDate = today
- *   - Otherwise → nextDueDate = earliest child nextDueDate
- *
- * When childSessions is provided (from the in-memory optimistic update),
- * the Roam re-read is skipped, eliminating a race condition where a
- * just-saved child session might not yet be visible to getChildSessionData.
- */
+// Update the parent LBL block's nextDueDate from child sessions.
+// If any child is due → nextDueDate = today; otherwise → earliest child nextDueDate.
+// When childSessions is provided (from optimistic update), the Roam re-read is skipped.
 export const updateParentNextDueDate = async ({
   refUid,
   childUids,
@@ -274,8 +252,8 @@ export const updateParentNextDueDate = async ({
     open: false,
   });
 
-  const childSessions = childSessionsIn ||
-    await getChildSessionData({ childUids, dataPageTitle });
+  const childSessions =
+    childSessionsIn || (await getChildSessionData({ childUids, dataPageTitle }));
 
   const now = new Date();
   const parentNextDueDate = deriveParentNextDueDateFromChildSessions(
@@ -285,18 +263,16 @@ export const updateParentNextDueDate = async ({
   );
 
   if (isSessionDue({ nextDueDate: parentNextDueDate }, now)) {
-    const todayString = `[[${stringUtils.dateToRoamDateString(now)}]]`;
     await upsertLatestSessionField({
       cardDataBlockUid,
       key: 'nextDueDate',
-      value: todayString,
+      value: `[[${stringUtils.dateToRoamDateString(now)}]]`,
     });
   } else {
-    const dueDateString = `[[${stringUtils.dateToRoamDateString(parentNextDueDate)}]]`;
     await upsertLatestSessionField({
       cardDataBlockUid,
       key: 'nextDueDate',
-      value: dueDateString,
+      value: `[[${stringUtils.dateToRoamDateString(parentNextDueDate)}]]`,
     });
   }
 };

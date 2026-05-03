@@ -34,29 +34,45 @@
  */
 import { getStringBetween, parseRoamDateString } from '~/utils/string';
 import * as stringUtils from '~/utils/string';
-import { Records, RecordUid, CompleteRecords } from '~/models/session';
-import {
-  addDueCards,
-  addNewCards,
-  calculateCombinedCounts,
-  calculateCompletedTodayCounts,
-  calculateTodayStatus,
-  initializeToday,
-} from '~/queries/today';
+import { Records, RecordUid, CompleteRecords, InteractionStyle } from '~/models/session';
+import { classifyAllCards } from '~/queries/today';
+import { TagCardSets } from '~/models/practice';
 import {
   getChildBlocksOnPage,
   getDailyNoteBlockUids,
   getOrCreateBlockOnPage,
   getOrCreateChildBlock,
+  batchFetchChildrenUids,
 } from './utils';
 import { DAILYNOTE_DECK_KEY } from '~/constants';
 import {
-  limitRemainingPracticeData,
+  allocateDailyCards,
   isSessionHeadingBlock,
   parseLatestSession,
   parseSessionHistory,
 } from './dataProcessing';
 export { SESSION_SNAPSHOT_KEYS } from './dataProcessing';
+
+export const getSortedDateBlocks = async (
+  cardDataBlockUid: string
+): Promise<Array<{ uid: string; string: string; order: number; children?: any[] }>> => {
+  const cardChildren = await window.roamAlphaAPI.q(
+    `[:find (pull ?card [:block/children :block/uid {:block/children [:block/uid :block/string :block/order {:block/children [:block/uid :block/string :block/order]}]}])
+         :in $ ?cardUid
+         :where [?card :block/uid ?cardUid]]`,
+    cardDataBlockUid
+  );
+
+  const children = cardChildren?.[0]?.[0]?.children || [];
+
+  return children
+    .filter((c) => {
+      if (!c?.string) return false;
+      const dateStr = stringUtils.getStringBetween(c.string, '[[', ']]');
+      return !!stringUtils.parseRoamDateString(dateStr);
+    })
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+};
 
 export const getPracticeData = async ({
   tagsList,
@@ -74,13 +90,12 @@ export const getPracticeData = async ({
   shuffleCards: boolean;
   cachedData: Record<string, any>;
   deckConfigs: string;
-}) => {
+}): Promise<{ practiceData: Records; tagCardSets: TagCardSets }> => {
   const pluginPageData = (await getPluginPageData({
     dataPageTitle,
     limitToLatest: true,
   })) as Records;
 
-  const today = initializeToday({ tagsList, cachedData, deckConfigs });
   const sessionData = {};
   const cardUids: Record<string, RecordUid[]> = {};
 
@@ -93,20 +108,57 @@ export const getPracticeData = async ({
     cardUids[tag] = results[i].cardUids;
   });
 
-  calculateCompletedTodayCounts({ today, tagsList, sessionData });
+  // ── LBL Mini-Deck: identify LBL parents and fetch their child UIDs ──
+  // LBL decks are classified from children's collective state (classifyLblDeck),
+  // never from the parent's own dateCreated/nextDueDate. This map provides
+  // the parent→children relationship needed by the pipeline.
+  const lblDeckMeta = await buildLblDeckMeta(pluginPageData);
 
-  addNewCards({ today, tagsList, cardUids, pluginPageData, shuffleCards });
-  addDueCards({ today, tagsList, sessionData, isCramming, shuffleCards });
+  // 2-step pipeline (replaces the previous 7-step pipeline):
+  //   1. classifyAllCards  → TagCardSets (due/new/completed per tag)
+  //   2. allocateDailyCards → trimmed TagCardSets (daily limit applied)
+  const tagCardSets = classifyAllCards({
+    tagsList,
+    sessionData,
+    cardUids,
+    pluginPageData,
+    lblDeckMeta,
+    deckConfigs,
+    cachedData,
+    isCramming,
+    shuffleCards,
+  });
 
-  limitRemainingPracticeData({ today, dailyLimit, tagsList, isCramming, deckConfigs });
-  calculateCombinedCounts({ today, tagsList });
-
-  calculateTodayStatus({ today, tagsList });
+  const trimmedTagCardSets = allocateDailyCards({
+    tagCardSets,
+    dailyLimit,
+    tagsList,
+    isCramming,
+    deckConfigs,
+  });
 
   return {
     practiceData: pluginPageData,
-    todayStats: today,
+    tagCardSets: trimmedTagCardSets,
   };
+};
+
+/**
+ * Identify LBL parent cards and batch-fetch their child block UIDs.
+ *
+ * Returns a map: parentUid → childUid[]. Only includes cards whose
+ * interaction is LBL and have session data (not isNew). The child UIDs
+ * are sorted by :block/order (document reading order).
+ */
+const buildLblDeckMeta = async (pluginPageData: Records): Promise<Record<string, string[]>> => {
+  const lblParentUids = Object.keys(pluginPageData).filter((uid) => {
+    const session = pluginPageData[uid] as Record<string, any> & { isNew?: boolean };
+    return session?.interaction === InteractionStyle.LBL && !session?.isNew;
+  });
+
+  if (!lblParentUids.length) return {};
+
+  return batchFetchChildrenUids(lblParentUids);
 };
 
 export const getDataPageQuery = (dataPageTitle: string) => `[
@@ -303,22 +355,7 @@ export const undoLatestSession = async ({
     open: false,
   });
 
-  const existingCardChildren = await window.roamAlphaAPI.q(
-    `[:find (pull ?card [:block/children :block/uid {:block/children [:block/uid :block/string :block/order {:block/children [:block/uid :block/string :block/order]}]}])
-         :in $ ?cardUid
-         :where [?card :block/uid ?cardUid]]`,
-    cardDataBlockUid
-  );
-
-  const children = existingCardChildren?.[0]?.[0]?.children || [];
-
-  const dateBlocks = children
-    .filter((c) => {
-      if (!c?.string) return false;
-      const dateStr = stringUtils.getStringBetween(c.string, '[[', ']]');
-      return !!stringUtils.parseRoamDateString(dateStr);
-    })
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const dateBlocks = await getSortedDateBlocks(cardDataBlockUid);
 
   if (dateBlocks.length > 0 && dateBlocks[0].uid) {
     await window.roamAlphaAPI.deleteBlock({ block: { uid: dateBlocks[0].uid } });

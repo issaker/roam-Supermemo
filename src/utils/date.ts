@@ -56,9 +56,9 @@ export const customFromNow = (date) => {
   }
 };
 
-export const isSameDay = (d1: Date, d2: Date) => {
+export const isSameDay = (d1: Date | undefined, d2: Date | undefined) => {
   if (!isDate(d1) || !isDate(d2)) return false;
-  return d1.toDateString() === d2.toDateString();
+  return (d1 as Date).toDateString() === (d2 as Date).toDateString();
 };
 
 export const isDate = (date: unknown) =>

@@ -1,7 +1,7 @@
 import * as Blueprint from '@blueprintjs/core';
 import styled from '@emotion/styled';
 import Tooltip from '~/components/Tooltip';
-import { CompletionStatus, Today } from '~/models/practice';
+import { TagCardSets } from '~/models/practice';
 
 const Wrapper = styled.span`
   display: flex;
@@ -17,11 +17,16 @@ const Tag = styled(Blueprint.Tag)`
 
 interface SidePanelWidgetProps {
   onClickCallback: () => void;
-  today: Today;
+  tagCardSets: TagCardSets;
 }
-const SidePanelWidget = ({ onClickCallback, today }: SidePanelWidgetProps) => {
-  const allDoneToday = today.combinedToday.status === CompletionStatus.Finished;
-  const combinedCounts = today.combinedToday;
+const SidePanelWidget = ({ onClickCallback, tagCardSets }: SidePanelWidgetProps) => {
+  const combinedDue = Object.values(tagCardSets).reduce((sum, cs) => sum + cs.dueUids.length, 0);
+  const combinedNew = Object.values(tagCardSets).reduce((sum, cs) => sum + cs.newUids.length, 0);
+  const combinedCompleted = Object.values(tagCardSets).reduce(
+    (sum, cs) => sum + cs.completedUids.length,
+    0
+  );
+  const allDoneToday = combinedDue + combinedNew === 0;
 
   const iconClass = allDoneToday ? 'bp3-icon-confirm' : 'bp3-icon-box';
 
@@ -38,17 +43,17 @@ const SidePanelWidget = ({ onClickCallback, today }: SidePanelWidgetProps) => {
         </div>
       </div>
       <div className="ml-2">
-        {combinedCounts.due > 0 && (
+        {combinedDue > 0 && (
           <Tooltip content="Due" placement="top">
             <Tag active minimal intent="primary" className="text-center" data-testid="due-tag">
-              {combinedCounts.due}
+              {combinedDue}
             </Tag>
           </Tooltip>
         )}
-        {combinedCounts.new > 0 && (
+        {combinedNew > 0 && (
           <Tooltip content="New" placement="top">
             <Tag active minimal intent="success" className="text-center ml-2" data-testid="new-tag">
-              {combinedCounts.new}
+              {combinedNew}
             </Tag>
           </Tooltip>
         )}

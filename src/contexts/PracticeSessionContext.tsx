@@ -1,19 +1,17 @@
 import * as React from 'react';
 import { Settings } from '~/hooks/useSettings';
 import { Records } from '~/models/session';
-import { Today } from '~/models/practice';
-import { handlePracticeProps } from '~/app';
+import { TagCardSets } from '~/models/practice';
 import { useSafeContext } from '~/hooks/useSafeContext';
 
 export interface PracticeSessionContextValue {
   settings: Settings;
   practiceData: Records;
-  today: Today;
+  tagCardSets: TagCardSets;
   selectedTag: string;
   tagsList: string[];
   isCramming: boolean;
   setIsCramming: (_isCramming: boolean) => void;
-  handlePracticeClick: (_props: handlePracticeProps) => void;
   handleMemoTagChange: (_tag: string) => void;
   fetchPracticeData: () => void;
   dataPageTitle: string;
@@ -24,31 +22,18 @@ export const PracticeSessionContext = React.createContext<PracticeSessionContext
   undefined
 );
 
-interface PracticeSessionProviderProps {
-  settings: Settings;
-  practiceData: Records;
-  today: Today;
-  selectedTag: string;
-  tagsList: string[];
-  isCramming: boolean;
-  setIsCramming: (_isCramming: boolean) => void;
-  handlePracticeClick: (_props: handlePracticeProps) => void;
-  handleMemoTagChange: (_tag: string) => void;
-  fetchPracticeData: () => void;
-  dataPageTitle: string;
-  updateSetting: <K extends keyof Settings>(_key: K, _value: Settings[K]) => void;
+type PracticeSessionProviderProps = PracticeSessionContextValue & {
   children: React.ReactNode;
-}
+};
 
 export const PracticeSessionProvider = ({
   settings,
   practiceData,
-  today,
+  tagCardSets,
   selectedTag,
   tagsList,
   isCramming,
   setIsCramming,
-  handlePracticeClick,
   handleMemoTagChange,
   fetchPracticeData,
   dataPageTitle,
@@ -59,12 +44,11 @@ export const PracticeSessionProvider = ({
     () => ({
       settings,
       practiceData,
-      today,
+      tagCardSets,
       selectedTag,
       tagsList,
       isCramming,
       setIsCramming,
-      handlePracticeClick,
       handleMemoTagChange,
       fetchPracticeData,
       dataPageTitle,
@@ -73,12 +57,11 @@ export const PracticeSessionProvider = ({
     [
       settings,
       practiceData,
-      today,
+      tagCardSets,
       selectedTag,
       tagsList,
       isCramming,
       setIsCramming,
-      handlePracticeClick,
       handleMemoTagChange,
       fetchPracticeData,
       dataPageTitle,

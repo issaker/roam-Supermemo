@@ -92,55 +92,76 @@ Settings → Data Migration panel. Converts `reviewMode::` → `algorithm::` + `
 
 ## Architecture — First Principles
 
-The system is TWO layers. No more.
+The queue is an immutable snapshot, not a computation. Built once per session, changed only by patches.
+
+### Three-Layer Queue
 
 ```
-┌─ Queue System (navigation only) ──────────────────────────┐
-│                                                            │
-│  X‑axis Primary Queue          Y‑axis LBL Queue            │
-│  ◀ card A ▶ ◀ card B ▶         ▲ child 0                  │
-│  ◀ LBL parent ▶ ◀ card C ▶     ├─ child 1  ← focused      │
-│  (sorted by urgency)            ▼ child 2                  │
-│                                 (sorted by doc order)       │
-│  reviewUnit(action)  ←──  single grading entry point       │
-│                                                            │
-├─ Card System (rendering / interaction) ───────────────────┤
-│                                                            │
-│  activeUid = inLbl ? currentChildUid : currentCardRefUid     │
-│  activeCard = useCardBlock(activeUid, facts.latestByUid[uid])│
-│    One data source.  One hook.  One pipeline.                │
-│  CardBlock  ←  same component, same props                  │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
+Pipeline (queries/)          → 2-step: classifyAllCards → allocateDailyCards, computes TagCardSets from Roam data
+Queue   (review-runtime/)    → QueueSnapshot + patches, session-stable
+Runtime (review-runtime/)    → facts + viewState + queue, coordinates everything
+
+Primary Queue (◀/▶): cards sorted by due-date urgency
+         │
+         ├── Normal: one card = one session = one queue slot
+         │
+         └── LBL parent: a CONTAINER slot
+              │
+              └── Sub-Queue (▲/▼): child cards in doc reading order
+                   ├── child 0  ←  real card, independent session
+                   ├── child 1  ←  real card, independent session
+                   └── child 2  ←  real card, independent session
 ```
+
+### LBL Container (Mini-Deck)
+
+The parent block is a **container**, not a card. It stores only:
+- `algorithm`, `interaction` (configuration)
+- `nextDueDate` (derived from children: `deriveParentNextDueDateFromChildSessions`)
+
+Child blocks are the **real cards**. Each has its own independent `Session` with full scheduling state. Children can have different algorithms.
+
+**Mini-Deck Classification Rule**: LBL decks are classified from their children's collective state via `classifyCard` (which wraps `classifyLblDeck` for LBL), never from the parent's own `nextDueDate` or `dateCreated`.
+
+| Classification | Normal Card | LBL Deck (from children) |
+|---------------|-------------|--------------------------|
+| **completedUids** | `dateCreated is today && isSessionMastered` | All children mastered AND ≥1 child graded today |
+| **dueUids** | `!isNew && isSessionDue` | Any child due or has no session |
+| **newUids** | `no session || (isNew && !nextDueDate)` | All children have no session |
 
 ### Inviolable Rules
 
-1. **Card is the atom.** A card is a Roam block + its session. It does not know which queue it sits in. Queue only determines navigation and ordering.
-2. **LBL is a mini-deck.** An LBL parent is one X-axis entry containing an ordered Y-axis child list. Children learned top-to-bottom, skipping non-due. Parent `nextDueDate` = earliest child due date.
-3. **There is only ONE kind of card.** `activeCard = useCardBlock(activeUid, activeSession)`. The same hook, same pipeline. The uid and session come from different sources depending on queue, but the card itself is identical.
-4. **One facts store, one view state.** `facts.latestByUid` holds every session (normal + child). `viewState` holds `focusedPrimaryUid`, `focusedChildUid`, `revisitDirectives`. Everything else is derived.
-5. **No mirrored state.** Never add `currentCardData`, `sessionOverrides`, `childSessionData`, `cardQueue`, `currentIndex` clones. Bugs come from state duplication, not missing conditionals.
+1. **Card is the atom.** One block + one session. It doesn't know which queue it sits in.
+2. **LBL parent is a Mini-Deck, classified from children.** Only child blocks are real cards. The parent's `nextDueDate` is always derived from children at grading time. The pipeline classifies LBL decks from children's collective state (`classifyCard` → `classifyLblDeck`), never from the parent's `dateCreated`.
+3. **One kind of card rendering.** `activeCard = useCardBlock(activeUid, activeSession)`. Same hook, same pipeline.
+4. **One facts store, one view state.** `facts.latestByUid` holds every session. `viewState` holds position. Everything else is derived.
+5. **Queue is snapshot, not computation.** Built once per session (date + tag + settings), never recomputed. Changes (complete, reinsert, undo) are patches on the snapshot.
 
 ### Runtime (`src/review-runtime/`)
 
 | Module | Role |
 |--------|------|
-| `types.ts` | `SessionFacts`, `ViewState`, `DeckSnapshot` |
-| `selectors.ts` | Pure derivation: `deriveDeckSnapshot`, `derivePrimaryQueueEntries`, `deriveFocusedPrimaryEntry` |
-| `useReviewRuntime.ts` | Unified hook: facts + view state + `reviewUnit` + `undoLatestReview` + `updateReviewConfigAction` |
+| `types.ts` | `SessionFacts`, `ViewState` |
+| `selectors.ts` | `deriveChildSessionMap` |
+| `useReviewRuntime.ts` | Unified hook: facts + view state + `reviewUnit` + `updateReviewConfigAction` |
+| `queue/types.ts` | `QueueEntry`, `QueueSnapshot`, `QueuePatch`, `EffectiveQueue`, `CardSet` |
+| `queue/buildQueue.ts` | Builds immutable `QueueSnapshot` from `CardSet` |
+| `queue/applyPatches.ts` | Applies patches to snapshot → `EffectiveQueue` |
+| `queue/useQueue.ts` | Hook: manages snapshot + patches, session-stable |
 
 ### Key Modules
 
 | Path | Role |
 |------|------|
 | `hooks/useCardBlock.ts` | Single card pipeline: block info, cloze guard, showAnswers. Shared by normal & LBL. |
-| `hooks/useLineByLineReview.ts` | LBL Y-axis: child positioning, progressive reveal. Grading delegated to `reviewUnit`. |
+| `hooks/useLineByLineReview.ts` | LBL Y-axis: child positioning, progressive reveal. Uses `deriveLblSubQueue`. Grading delegated to `reviewUnit`. |
 | `hooks/useCurrentCardData.tsx` | `currentCardData` = `latestSession` alias. Optimistic `cardMeta` for config changes. |
-| `models/session.ts` | Session model, scheduling algorithms, `interaction` (NORMAL/LBL), `ReviewStatus`, `resolveBaseForCalculation`. |
-| `models/practice.ts` | Queue strategies: `sortNormalDueCardUids` (urgency), `getLblQueueState` (doc order scan). |
-| `queries/data.ts` | Roam page read/write, session parsing, `limitRemainingPracticeData`. |
-| `queries/today.ts` | Due/new/completed calculation pipeline (mutable — target: pure derivation). |
+| `hooks/usePracticeData.tsx` | Fetches practice data from Roam. No freezing — queue stability is handled by `useQueue`. |
+| `models/session.ts` | Session model, scheduling algorithms, `interaction` (NORMAL/LBL), `classifyCard` (unified Normal + LBL classification). |
+| `models/practice.ts` | `TagCardSet/TagCardSets` types, queue strategies: `sortNormalDueCardUids` (urgency), `deriveLblSubQueue` (single LBL sub-queue derivation point). |
+| `queries/data.ts` | 2-step pipeline: `classifyAllCards` → `allocateDailyCards`. Roam page read/write, session parsing. |
+| `queries/today.ts` | `classifyAllCards`: single-pass card classification → `TagCardSets`. |
+| `queries/dataProcessing.ts` | Session parsing, `allocateDailyCards` (proportional daily limit allocation). |
 | `practice.ts` | Pure scheduling math: SM2 / Progressive / Fixed Time. |
 
 ### Data Model
@@ -188,12 +209,10 @@ Roam loads via `<script>`. Missing default export → `Uncaught SyntaxError`.
 `resolveReviewConfig` returns PROGRESSIVE for unrecognized values. Old data MUST migrate via Data Migration panel. Permanent compat = technical debt.
 
 ### Why mirrored state is forbidden
-Every persistent review bug comes from state duplication:
-- undo reverts data, but one mirror still shows old state
-- child review updates child session, parent aggregate lags
-- refresh rebuilds one queue, another local cursor points to stale context
+Every persistent review bug comes from state duplication. The queue snapshot + patch system eliminates the need for mirrored state: the snapshot is the single source of truth for queue contents, and patches are the single source of truth for mutations.
 
-Fix: one session per uid, one view state, everything else derived. Bias toward **removing** state, not adding sync patches.
+### Patch ordering matters
+Patches are applied in order. An `undo_reinsert` must reference the exact `targetIndex` produced by the corresponding `reinsert` patch. If patches are applied out of order, the effective queue will be incorrect.
 
 ### `resolveBaseForCalculation` — same-day re-scoring
 Prevents interval inflation (Good→Perfect stacking). Three rules: (1) non-same-day → use as-is, (2) same-day Forgot → use as-is, (3) same-day non-Forgot → rewind to `baseSessionData`.
@@ -212,21 +231,27 @@ npm run check      # lint + typecheck + test
 src/
 ├── practice.ts              # SM2 / Progressive / Fixed Time math
 ├── models/
-│   ├── session.ts           # Session, algorithms, interaction, ReviewStatus
-│   └── practice.ts          # Queue strategies (urgency sort, LBL scan)
+│   ├── session.ts           # Session, algorithms, interaction, classifyCard
+│   └── practice.ts          # TagCardSet/TagCardSets types, queue strategies (urgency sort, deriveLblSubQueue)
 ├── review-runtime/
-│   ├── types.ts             # SessionFacts, ViewState, DeckSnapshot
-│   ├── selectors.ts         # Pure derivation selectors
-│   └── useReviewRuntime.ts  # Unified runtime hook
+│   ├── types.ts             # SessionFacts, ViewState
+│   ├── selectors.ts         # deriveChildSessionMap
+│   ├── useReviewRuntime.ts  # Unified runtime hook
+│   └── queue/
+│       ├── types.ts         # QueueEntry, QueueSnapshot, QueuePatch, CardSet
+│       ├── buildQueue.ts    # Builds immutable snapshot from CardSet
+│       ├── applyPatches.ts  # Applies patches to snapshot
+│       └── useQueue.ts      # Queue hook: snapshot + patches
 ├── hooks/
 │   ├── useCardBlock.ts      # Card pipeline (normal & LBL)
 │   ├── useCurrentCardData.tsx
 │   ├── useLineByLineReview.ts  # LBL Y-axis navigation
+│   ├── usePracticeData.tsx     # Practice data fetch (no freezing)
 │   ├── useSettings.ts       # Single source of truth for settings
 │   ├── useTags.tsx          # Deck tag list from deckConfigs
 │   ├── useCloze.tsx         # {} cloze deletion rendering
 │   └── ...
-├── queries/                 # data.ts, today.ts, save.ts, settings.ts
+├── queries/                 # data.ts, today.ts, save.ts, settings.ts, dataProcessing.ts
 ├── components/
 │   ├── overlay/             # PracticeOverlay, Header, Footer, CardBlock, LineByLineView
 │   ├── DeckConfigsTable.tsx # Table-based deck management UI

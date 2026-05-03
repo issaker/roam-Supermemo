@@ -303,3 +303,30 @@ export const generateNewSession = ({
     isNew,
   };
 };
+
+/**
+ * Batch-fetch direct children UIDs for multiple blocks.
+ *
+ * Returns a map: parentUid → sorted childUid[] (by :block/order).
+ * Used by the pipeline to build lblDeckMeta without N+1 queries.
+ */
+export const batchFetchChildrenUids = async (
+  parentUids: string[]
+): Promise<Record<string, string[]>> => {
+  if (!parentUids.length) return {};
+
+  const result: Record<string, string[]> = {};
+
+  await Promise.all(
+    parentUids.map(async (uid) => {
+      try {
+        const blockInfo = await fetchBlockInfo(uid);
+        result[uid] = blockInfo.childrenUids || [];
+      } catch {
+        result[uid] = [];
+      }
+    })
+  );
+
+  return result;
+};

@@ -1,12 +1,3 @@
-/**
- * useCloze Hook
- *
- * Implements custom cloze deletion using {} syntax.
- * Wraps matched text in <span class="roam-Supermemo-cloze"> elements.
- * When answers are hidden, cloze text is masked with background color.
- *
- * Note: Roam's native ^^highlight^^ is NOT treated as cloze.
- */
 import * as React from 'react';
 
 function getAllTextNodes(element: Element) {
@@ -27,6 +18,7 @@ function wrapMatches(node: Element, regex: RegExp) {
       continue;
     }
 
+    regex.lastIndex = 0;
     const match = regex.exec(text);
 
     if (match) {
@@ -49,24 +41,17 @@ function wrapMatches(node: Element, regex: RegExp) {
         textNode.parentNode.insertBefore(afterElm, textNode);
         textNode.parentNode.removeChild(textNode);
       }
-      // Offset update: replace current node with before + cloze + after, continue matching from after node
-      // Avoid re-calling getAllTextNodes to prevent O(N*M) repeated scanning
       textNodes.splice(i, 1, beforeElm, afterElm);
-      // afterElm may contain more cloze marks, don't skip it
-      // beforeElm is guaranteed to have no more matches (before the match point)
-      i++; // skip beforeElm, check afterElm next
+      i++;
     } else {
       i++;
     }
   }
 }
 
-const useCloze = ({ renderedBlockElm, hasClozeCallback }: {
+const useCloze = ({ renderedBlockElm }: {
   renderedBlockElm: HTMLElement;
-  hasClozeCallback: (_hasCloze: boolean) => void;
 }) => {
-  const [clozeCount, setClozeCount] = React.useState(0);
-
   React.useEffect(() => {
     if (!renderedBlockElm) return;
 
@@ -77,14 +62,7 @@ const useCloze = ({ renderedBlockElm, hasClozeCallback }: {
 
     const re = new RegExp(`{(.+?)}`, 'gs');
     wrapMatches(mainBlockElm, re);
-
-    const clozeElms = renderedBlockElm.querySelectorAll('.roam-Supermemo-cloze');
-    setClozeCount(clozeElms.length);
   }, [renderedBlockElm]);
-
-  React.useEffect(() => {
-    hasClozeCallback(clozeCount > 0);
-  }, [clozeCount, hasClozeCallback]);
 };
 
 export default useCloze;

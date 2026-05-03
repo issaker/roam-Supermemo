@@ -1,61 +1,34 @@
 /**
- * Today's Review Status Model
+ * Practice Status & Queue Models
  *
- * Tracks per-tag and combined review statistics for the current day:
- * - Due/new card counts and UIDs
- * - Completed card counts and UIDs
- * - Completion status (Unstarted / Partial / Finished)
- * - Render mode (Normal = question first, AnswerFirst = answer first)
+ * Defines render modes and queue strategies for practice sessions.
+ * - TagCardSet/TagCardSets: per-tag card classification (due/new/completed UIDs)
+ * - sortNormalDueCardUids: primary queue ordering (urgency → difficulty → maturity)
+ * - getLblQueueState / deriveLblSubQueue: LBL sub-queue (sequential reading order)
  */
-import { RecordUid, Records, Session, findNextDueChildIndex, getDueChildIndices, isSessionDue } from './session';
-
-export enum CompletionStatus {
-  Finished = 'finished',
-  Partial = 'partial',
-  Unstarted = 'unstarted',
-}
+import {
+  RecordUid,
+  Records,
+  Session,
+  findNextDueChildIndex,
+  getDueChildIndices,
+  isSessionDue,
+} from './session';
 
 export enum RenderMode {
   Normal = 'normal',
   AnswerFirst = 'answerFirst',
 }
 
-export type Today = {
-  tags: {
-    [tag: string]: {
-      status: CompletionStatus;
-      due: number;
-      new: number;
-      dueUids: RecordUid[];
-      newUids: RecordUid[];
-      completed: number;
-      completedUids: RecordUid[];
-      renderMode: RenderMode;
-    };
-  };
-  combinedToday: {
-    status: CompletionStatus;
-    due: number;
-    new: number;
-    dueUids: RecordUid[];
-    newUids: RecordUid[];
-    completed: number;
-    completedUids: RecordUid[];
-  };
+export type TagCardSet = {
+  dueUids: RecordUid[];
+  newUids: RecordUid[];
+  completedUids: RecordUid[];
+  renderMode: RenderMode;
+  lblDeckMeta: Record<string, string[]>;
 };
 
-export const TodayInitial: Today = {
-  tags: {},
-  combinedToday: {
-    status: CompletionStatus.Unstarted,
-    due: 0,
-    new: 0,
-    dueUids: [],
-    newUids: [],
-    completed: 0,
-    completedUids: [],
-  },
-};
+export type TagCardSets = Record<string, TagCardSet>;
 
 // Primary queue strategy: NORMAL cards are selected by due status, then ordered by
 // urgency, difficulty, and maturity. This is the only place that defines that order.
@@ -123,3 +96,12 @@ export const getLblQueueState = (
     isComplete: nextDueChildIndex >= childUidsList.length,
   };
 };
+
+// Single derivation point for LBL sub-queue state.
+// All consumers should use this instead of calling getLblQueueState directly.
+export const deriveLblSubQueue = (
+  childUids: string[],
+  childSessionData: Record<string, Session | undefined>,
+  fromIndex = 0,
+  now = new Date()
+) => getLblQueueState(childUids, childSessionData as Record<string, Session>, fromIndex, now);

@@ -22,6 +22,7 @@ import {
   isGradingAlgorithm,
   SchedulingAlgorithm,
   InteractionStyle,
+  ALGORITHM_META,
 } from '~/models/session';
 import { MainContext } from '~/components/overlay/PracticeOverlay';
 import { useAlgorithmContext } from '~/hooks/useAlgorithmContext';
@@ -38,8 +39,6 @@ const Footer = ({
   onPracticeClick,
   onNextClick,
   onPrevClick,
-  isDone,
-  hasCards,
   onCloseCallback,
   currentCardData,
   onStartCrammingClick,
@@ -52,8 +51,6 @@ const Footer = ({
   onPracticeClick: (_props: { sm2_grade?: number; refUid?: string }) => void;
   onNextClick: () => void;
   onPrevClick: () => void;
-  isDone: boolean;
-  hasCards: boolean;
   onCloseCallback: () => void;
   currentCardData: any;
   onStartCrammingClick: () => void;
@@ -72,6 +69,8 @@ const Footer = ({
   } = React.useContext(MainContext);
   const { algorithm: algorithmFromSession, interaction: interactionFromSession } =
     useAlgorithmContext();
+
+  const noCardDisplayed = !currentCardData;
 
   const [isIntervalEditorOpen, setIsIntervalEditorOpen] = React.useState(false);
 
@@ -283,10 +282,11 @@ const Footer = ({
         className="bp3-dialog-footer-actions flex-wrap gap-4 justify-center w-full mx-5  my-3"
         data-testid="footer-actions-wrapper"
       >
-        {isDone || !hasCards ? (
+        {noCardDisplayed ? (
           <FinishedControls
             onStartCrammingClick={onStartCrammingClick}
             onCloseCallback={onCloseCallback}
+            onPrevClick={onPrevClick}
           />
         ) : isLineByLine && lineByLineIsCardComplete ? (
           <LblCompletedControls
@@ -298,6 +298,8 @@ const Footer = ({
           <CompletedTodayControls
             onUndoLearning={onUndoLearning}
             algorithm={algorithmFromSession}
+            onPrevClick={onPrevClick}
+            onNextClick={nextFn}
           />
         ) : !showAnswers ? (
           <AnswerHiddenControls
@@ -339,9 +341,21 @@ const AnswerHiddenControls = ({ activateButtonFn, showAnswerFn, activeButtonKey 
   </ControlButton>
 );
 
-const FinishedControls = ({ onStartCrammingClick, onCloseCallback }) => {
+const FinishedControls = ({ onStartCrammingClick, onCloseCallback, onPrevClick }) => {
   return (
     <>
+      <NavButton
+        type="button"
+        aria-label="Previous"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onPrevClick();
+        }}
+        className="bp3-button bp3-minimal"
+      >
+        ◀
+      </NavButton>
       <Tooltip content="Review all cards without waiting for scheduling" placement="top">
         <Blueprint.Button
           className="text-base font-medium py-1"
@@ -364,31 +378,55 @@ const FinishedControls = ({ onStartCrammingClick, onCloseCallback }) => {
   );
 };
 
-const ALGORITHM_DISPLAY_NAME: Record<SchedulingAlgorithm, string> = {
-  [SchedulingAlgorithm.SM2]: 'SM2',
-  [SchedulingAlgorithm.PROGRESSIVE]: 'Progressive',
-  [SchedulingAlgorithm.FIXED_TIME]: 'FixedTime',
-};
-
 const CompletedTodayControls = ({
   onUndoLearning,
   algorithm,
+  onPrevClick,
+  onNextClick,
 }: {
   onUndoLearning: () => void;
   algorithm: SchedulingAlgorithm | undefined;
+  onPrevClick: () => void;
+  onNextClick: () => void;
 }) => {
-  const displayName = algorithm ? ALGORITHM_DISPLAY_NAME[algorithm] : '';
+  const displayName = algorithm ? ALGORITHM_META[algorithm].label : '';
   return (
-    <Tooltip content="Reset this card's learning record and re-learn" placement="top">
-      <Blueprint.Button
-        className="text-base font-medium py-1"
-        intent="danger"
-        onClick={onUndoLearning}
-        outlined
+    <div className="flex items-center justify-evenly w-full">
+      <NavButton
+        type="button"
+        aria-label="Previous"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onPrevClick();
+        }}
+        className="bp3-button bp3-minimal"
       >
-        Undo Learning ({displayName})
-      </Blueprint.Button>
-    </Tooltip>
+        ◀
+      </NavButton>
+      <Tooltip content="Reset this card's learning record and re-learn" placement="top">
+        <Blueprint.Button
+          className="text-base font-medium py-1"
+          intent="danger"
+          onClick={onUndoLearning}
+          outlined
+        >
+          Undo Learning ({displayName})
+        </Blueprint.Button>
+      </Tooltip>
+      <NavButton
+        type="button"
+        aria-label="Next"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onNextClick();
+        }}
+        className="bp3-button bp3-minimal"
+      >
+        ▶
+      </NavButton>
+    </div>
   );
 };
 

@@ -269,6 +269,19 @@ describe('PracticeOverlay', () => {
       dateCreated: dateUtils.subtractDays(new Date(), 1),
       nextDueDate: new Date(),
     });
+    // Child sessions must be in pluginPageData for classifyLblDeck to work.
+    mockBuilder.withSession(childOne, {
+      algorithm: SchedulingAlgorithm.SM2,
+      interaction: InteractionStyle.NORMAL,
+      dateCreated: dateUtils.subtractDays(new Date(), 1),
+      nextDueDate: new Date(),
+    });
+    mockBuilder.withSession(childTwo, {
+      algorithm: SchedulingAlgorithm.SM2,
+      interaction: InteractionStyle.NORMAL,
+      dateCreated: dateUtils.subtractDays(new Date(), 1),
+      nextDueDate: new Date(),
+    });
     mockBuilder.withCard({ uid: normalCard }).withSession(normalCard, {
       algorithm: SchedulingAlgorithm.SM2,
       interaction: InteractionStyle.NORMAL,

@@ -12,6 +12,7 @@ import {
   getDueChildIndices,
   findNextDueChildIndex,
   deriveParentNextDueDateFromChildSessions,
+  classifyCard,
 } from '~/models/session';
 
 describe('mode classification functions', () => {
@@ -98,19 +99,33 @@ describe('session scheduling helpers', () => {
     const now = new Date('2026-04-25T08:00:00.000Z');
 
     expect(isSessionDue(undefined, now)).toBe(true);
-    expect(isSessionDue({ nextDueDate: new Date('2026-04-25T08:00:00.000Z') } as any, now)).toBe(true);
-    expect(isSessionDue({ nextDueDate: new Date('2026-04-26T00:00:00.000Z') } as any, now)).toBe(false);
+    expect(isSessionDue({ nextDueDate: new Date('2026-04-25T08:00:00.000Z') } as any, now)).toBe(
+      true
+    );
+    expect(isSessionDue({ nextDueDate: new Date('2026-04-26T00:00:00.000Z') } as any, now)).toBe(
+      false
+    );
 
     expect(isSessionMastered(undefined, now)).toBe(false);
-    expect(isSessionMastered({ nextDueDate: new Date('2026-04-26T00:00:00.000Z') } as any, now)).toBe(true);
+    expect(
+      isSessionMastered({ nextDueDate: new Date('2026-04-26T00:00:00.000Z') } as any, now)
+    ).toBe(true);
   });
 
   it('finds due child indices in reading order', () => {
     const now = new Date('2026-04-25T08:00:00.000Z');
     const childUids = ['a', 'b', 'c'];
     const childSessions = {
-      a: { algorithm: SchedulingAlgorithm.PROGRESSIVE, interaction: InteractionStyle.NORMAL, nextDueDate: new Date('2026-05-01T00:00:00.000Z') },
-      b: { algorithm: SchedulingAlgorithm.SM2, interaction: InteractionStyle.NORMAL, nextDueDate: new Date('2026-04-24T00:00:00.000Z') },
+      a: {
+        algorithm: SchedulingAlgorithm.PROGRESSIVE,
+        interaction: InteractionStyle.NORMAL,
+        nextDueDate: new Date('2026-05-01T00:00:00.000Z'),
+      },
+      b: {
+        algorithm: SchedulingAlgorithm.SM2,
+        interaction: InteractionStyle.NORMAL,
+        nextDueDate: new Date('2026-04-24T00:00:00.000Z'),
+      },
       c: { algorithm: SchedulingAlgorithm.FIXED_TIME, interaction: InteractionStyle.NORMAL },
     };
 
@@ -123,23 +138,173 @@ describe('session scheduling helpers', () => {
     const now = new Date('2026-04-25T08:00:00.000Z');
     const childUids = ['a', 'b', 'c'];
     const childSessions = {
-      a: { algorithm: SchedulingAlgorithm.PROGRESSIVE, interaction: InteractionStyle.NORMAL, nextDueDate: new Date('2026-05-01T00:00:00.000Z') },
-      b: { algorithm: SchedulingAlgorithm.SM2, interaction: InteractionStyle.NORMAL, nextDueDate: new Date('2026-05-03T00:00:00.000Z') },
-      c: { algorithm: SchedulingAlgorithm.FIXED_TIME, interaction: InteractionStyle.NORMAL, nextDueDate: new Date('2026-05-02T00:00:00.000Z') },
+      a: {
+        algorithm: SchedulingAlgorithm.PROGRESSIVE,
+        interaction: InteractionStyle.NORMAL,
+        nextDueDate: new Date('2026-05-01T00:00:00.000Z'),
+      },
+      b: {
+        algorithm: SchedulingAlgorithm.SM2,
+        interaction: InteractionStyle.NORMAL,
+        nextDueDate: new Date('2026-05-03T00:00:00.000Z'),
+      },
+      c: {
+        algorithm: SchedulingAlgorithm.FIXED_TIME,
+        interaction: InteractionStyle.NORMAL,
+        nextDueDate: new Date('2026-05-02T00:00:00.000Z'),
+      },
     };
 
-    expect(deriveParentNextDueDateFromChildSessions(childUids, childSessions as any, now))
-      .toEqual(new Date('2026-05-01T00:00:00.000Z'));
+    expect(deriveParentNextDueDateFromChildSessions(childUids, childSessions as any, now)).toEqual(
+      new Date('2026-05-01T00:00:00.000Z')
+    );
   });
 
   it('keeps parent due today when any child is still due or unread', () => {
     const now = new Date('2026-04-25T08:00:00.000Z');
     const childUids = ['a', 'b'];
     const childSessions = {
-      a: { algorithm: SchedulingAlgorithm.PROGRESSIVE, interaction: InteractionStyle.NORMAL, nextDueDate: new Date('2026-05-01T00:00:00.000Z') },
+      a: {
+        algorithm: SchedulingAlgorithm.PROGRESSIVE,
+        interaction: InteractionStyle.NORMAL,
+        nextDueDate: new Date('2026-05-01T00:00:00.000Z'),
+      },
       b: { algorithm: SchedulingAlgorithm.SM2, interaction: InteractionStyle.NORMAL },
     };
 
-    expect(deriveParentNextDueDateFromChildSessions(childUids, childSessions as any, now)).toEqual(now);
+    expect(deriveParentNextDueDateFromChildSessions(childUids, childSessions as any, now)).toEqual(
+      now
+    );
+  });
+});
+
+describe('classifyCard', () => {
+  const now = new Date('2026-04-25T08:00:00.000Z');
+  const makeSession = (overrides: Record<string, any> = {}) => ({
+    algorithm: SchedulingAlgorithm.PROGRESSIVE,
+    interaction: InteractionStyle.NORMAL,
+    ...overrides,
+  });
+
+  it('classifies normal cards: no session → new', () => {
+    expect(classifyCard({ session: undefined, now })).toBe('new');
+  });
+
+  it('classifies normal cards: isNew → new', () => {
+    expect(
+      classifyCard({
+        session: {
+          isNew: true,
+          algorithm: SchedulingAlgorithm.PROGRESSIVE,
+          interaction: InteractionStyle.NORMAL,
+        } as any,
+        now,
+      })
+    ).toBe('new');
+  });
+
+  it('classifies normal cards: due → due', () => {
+    expect(classifyCard({ session: makeSession({ nextDueDate: now }), now })).toBe('due');
+  });
+
+  it('classifies normal cards: past due → due', () => {
+    expect(
+      classifyCard({
+        session: makeSession({ nextDueDate: new Date('2026-04-24T00:00:00.000Z') }),
+        now,
+      })
+    ).toBe('due');
+  });
+
+  it('classifies normal cards: mastered today → completed', () => {
+    expect(
+      classifyCard({
+        session: makeSession({
+          nextDueDate: new Date('2026-05-01T00:00:00.000Z'),
+          dateCreated: now,
+        }),
+        now,
+      })
+    ).toBe('completed');
+  });
+
+  it('classifies normal cards: mastered previously → scheduled', () => {
+    expect(
+      classifyCard({
+        session: makeSession({
+          nextDueDate: new Date('2026-05-01T00:00:00.000Z'),
+          dateCreated: new Date('2026-04-20T00:00:00.000Z'),
+        }),
+        now,
+      })
+    ).toBe('scheduled');
+  });
+
+  it('classifies LBL decks: all children new → new', () => {
+    const lblChildren = { uids: ['a', 'b'], sessions: { a: undefined, b: undefined } };
+    expect(
+      classifyCard({
+        session: makeSession({ interaction: InteractionStyle.LBL }),
+        lblChildren,
+        now,
+      })
+    ).toBe('new');
+  });
+
+  it('classifies LBL decks: any child due → due', () => {
+    const lblChildren = {
+      uids: ['a', 'b'],
+      sessions: {
+        a: makeSession({ nextDueDate: new Date('2026-05-01T00:00:00.000Z') }),
+        b: makeSession({ nextDueDate: now }),
+      },
+    };
+    expect(
+      classifyCard({
+        session: makeSession({ interaction: InteractionStyle.LBL }),
+        lblChildren,
+        now,
+      })
+    ).toBe('due');
+  });
+
+  it('classifies LBL decks: all children mastered, one graded today → completed', () => {
+    const lblChildren = {
+      uids: ['a', 'b'],
+      sessions: {
+        a: makeSession({ nextDueDate: new Date('2026-05-01T00:00:00.000Z'), dateCreated: now }),
+        b: makeSession({ nextDueDate: new Date('2026-05-02T00:00:00.000Z'), dateCreated: now }),
+      },
+    };
+    expect(
+      classifyCard({
+        session: makeSession({ interaction: InteractionStyle.LBL }),
+        lblChildren,
+        now,
+      })
+    ).toBe('completed');
+  });
+
+  it('classifies LBL decks: all children mastered, none graded today → scheduled', () => {
+    const lblChildren = {
+      uids: ['a', 'b'],
+      sessions: {
+        a: makeSession({
+          nextDueDate: new Date('2026-05-01T00:00:00.000Z'),
+          dateCreated: new Date('2026-04-20T00:00:00.000Z'),
+        }),
+        b: makeSession({
+          nextDueDate: new Date('2026-05-02T00:00:00.000Z'),
+          dateCreated: new Date('2026-04-20T00:00:00.000Z'),
+        }),
+      },
+    };
+    expect(
+      classifyCard({
+        session: makeSession({ interaction: InteractionStyle.LBL }),
+        lblChildren,
+        now,
+      })
+    ).toBe('scheduled');
   });
 });

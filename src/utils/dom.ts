@@ -28,3 +28,9 @@ export const collapseBlockOnPage = (uid: string) => {
     block: { uid, open: false },
   });
 };
+
+export const expandBlockOnPage = (uid: string) => {
+  return window.roamAlphaAPI.updateBlock({
+    block: { uid, open: true },
+  });
+};

@@ -19,7 +19,7 @@ import {
   isGradingAlgorithm,
   getSessionAlgorithm,
 } from '~/models/session';
-import { getLblQueueState } from '~/models/practice';
+import { deriveLblSubQueue } from '~/models/practice';
 
 export const shouldReinsertLblCard = ({
   currentChildIndex,
@@ -99,7 +99,7 @@ export default function useLineByLineReview({
   const [lineByLineRevealedCount, setLineByLineRevealedCount] = React.useState(0);
 
   const lblQueueState = React.useMemo(
-    () => getLblQueueState(childUidsList, childSessionData, 0),
+    () => deriveLblSubQueue(childUidsList, childSessionData, 0),
     [childUidsList, childSessionData]
   );
   const dueChildCount = lblQueueState.dueChildCount;
@@ -149,9 +149,14 @@ export default function useLineByLineReview({
     setMaxVisitedChildIndex(nextFocusIndex);
     setLineByLineRevealedCount(nextFocusIndex + 1);
   }, [
-    isLBLReviewMode, childUidsList, childSessionData,
-    hasLoadedChildSessionsForCurrentCard, lblQueueState,
-    focusedChildUid, setFocusedChildUid, setMaxVisitedChildIndex,
+    isLBLReviewMode,
+    childUidsList,
+    childSessionData,
+    hasLoadedChildSessionsForCurrentCard,
+    lblQueueState,
+    focusedChildUid,
+    setFocusedChildUid,
+    setMaxVisitedChildIndex,
   ]);
 
   const lineByLineIsCardComplete =
@@ -171,8 +176,12 @@ export default function useLineByLineReview({
     setMaxVisitedChildIndex(lineByLineCurrentChildIndex);
     setLineByLineRevealedCount((prev) => Math.max(prev, lineByLineCurrentChildIndex + 1));
   }, [
-    isLBLReviewMode, currentChildUid, focusedChildUid,
-    lineByLineCurrentChildIndex, setFocusedChildUid, setMaxVisitedChildIndex,
+    isLBLReviewMode,
+    currentChildUid,
+    focusedChildUid,
+    lineByLineCurrentChildIndex,
+    setFocusedChildUid,
+    setMaxVisitedChildIndex,
   ]);
 
   const onLineByLineGrade = React.useCallback(
@@ -181,7 +190,8 @@ export default function useLineByLineReview({
         !currentCardRefUid ||
         !currentChildUid ||
         lineByLineCurrentChildIndex >= childUidsList.length
-      ) return;
+      )
+        return;
 
       void reviewUnit({
         targetUid: currentChildUid,
@@ -201,10 +211,19 @@ export default function useLineByLineReview({
       });
     },
     [
-      currentCardRefUid, currentChildUid, lineByLineCurrentChildIndex,
-      childUidsList, childSessionData, currentChildAlgorithm, interaction,
-      forgotReinsertOffset, lblNextReinsertOffset, currentPrimaryEntryId,
-      currentChildIsLblNext, reviewUnit, setShowAnswers,
+      currentCardRefUid,
+      currentChildUid,
+      lineByLineCurrentChildIndex,
+      childUidsList,
+      childSessionData,
+      currentChildAlgorithm,
+      interaction,
+      forgotReinsertOffset,
+      lblNextReinsertOffset,
+      currentPrimaryEntryId,
+      currentChildIsLblNext,
+      reviewUnit,
+      setShowAnswers,
     ]
   );
 

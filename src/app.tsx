@@ -1,21 +1,8 @@
-/**
- * App Root Component
- *
- * Orchestrates the entire review workflow:
- * 1. Reads settings and builds tag list (decks)
- * 2. Fetches practice data and cache from the Roam data page
- * 3. Renders sidebar widget and practice overlay
- * 4. Handles card grading via the SM2 / Fixed-Interval algorithms
- *
- * Data flow:
- *   useSettings → useTags → useCachedData → usePracticeData → PracticeOverlay
- */
 import * as React from 'react';
 import * as Blueprint from '@blueprintjs/core';
 import PracticeOverlay from '~/components/overlay/PracticeOverlay';
 import SidePanelWidget from '~/components/SidePanelWidget';
 import { PracticeSessionProvider } from '~/contexts/PracticeSessionContext';
-import practice from '~/practice';
 import usePracticeData from '~/hooks/usePracticeData';
 import useTags from '~/hooks/useTags';
 import useSettings from '~/hooks/useSettings';
@@ -24,32 +11,18 @@ import useOnBlockInteract from '~/hooks/useOnBlockInteract';
 import useCommandPaletteAction from '~/hooks/useCommandPaletteAction';
 import useCachedData from '~/hooks/useCachedData';
 import useOnVisibilityStateChange from '~/hooks/useOnVisibilityStateChange';
-import { Session } from '~/models/session';
-
-export type handlePracticeProps = Session & {
-  refUid: string;
-};
 
 const App = () => {
   const [showPracticeOverlay, setShowPracticeOverlay] = React.useState(false);
   const [isCramming, setIsCramming] = React.useState(false);
-  const [overlayKey, setOverlayKey] = React.useState(0);
 
-  const {
-    settings,
-    updateSetting,
-  } = useSettings();
-  const {
-    deckConfigs,
-    dataPageTitle,
-    dailyLimit,
-    shuffleCards,
-  } = settings;
+  const { settings, updateSetting } = useSettings();
+  const { deckConfigs, dataPageTitle, dailyLimit, shuffleCards } = settings;
   const { selectedTag, setSelectedTag, tagsList } = useTags({ deckConfigs });
 
   const { fetchCacheData, data: cachedData } = useCachedData({ dataPageTitle });
 
-  const { practiceData, today, fetchPracticeData } = usePracticeData({
+  const { practiceData, tagCardSets, fetchPracticeData } = usePracticeData({
     tagsList,
     selectedTag,
     dataPageTitle,
@@ -69,25 +42,6 @@ const App = () => {
     refreshData();
   }, [deckConfigs, refreshData]);
 
-  const handlePracticeClick = async ({ refUid, ...cardData }: handlePracticeProps) => {
-    if (!refUid) {
-      console.error('HandlePracticeFn Error: No refUid provided');
-      return;
-    }
-
-    try {
-      await practice({
-        ...cardData,
-        dataPageTitle,
-        dateCreated: new Date(),
-        refUid,
-        isCramming,
-      });
-    } catch (error) {
-      console.error('Error Saving Practice Data', error);
-    }
-  };
-
   useOnVisibilityStateChange(() => {
     if (showPracticeOverlay) return;
     refreshData();
@@ -103,15 +57,6 @@ const App = () => {
     setShowPracticeOverlay(false);
     setIsCramming(false);
     refreshData();
-  };
-
-  const onRestartPracticeOverlayCallback = () => {
-    setOverlayKey((prev) => prev + 1);
-    refreshData();
-  };
-
-  const handleMemoTagChange = (tag: string) => {
-    setSelectedTag(tag);
   };
 
   useCollapseReferenceList({ dataPageTitle });
@@ -157,30 +102,25 @@ const App = () => {
   return (
     <Blueprint.HotkeysProvider>
       <>
-        <SidePanelWidget onClickCallback={onShowPracticeOverlay} today={today} />
-        {showPracticeOverlay && (
-          <PracticeSessionProvider
-            key={overlayKey}
-            settings={settings}
-            practiceData={practiceData}
-            today={today}
-            selectedTag={selectedTag}
-            tagsList={tagsList}
-            isCramming={isCramming}
-            setIsCramming={setIsCramming}
-            handlePracticeClick={handlePracticeClick}
-            handleMemoTagChange={handleMemoTagChange}
-            fetchPracticeData={fetchPracticeData}
-            dataPageTitle={dataPageTitle}
-            updateSetting={updateSetting}
-          >
-            <PracticeOverlay
-              isOpen={true}
-              onCloseCallback={onClosePracticeOverlayCallback}
-              onRestartCallback={onRestartPracticeOverlayCallback}
-            />
-          </PracticeSessionProvider>
-        )}
+        <SidePanelWidget onClickCallback={onShowPracticeOverlay} tagCardSets={tagCardSets} />
+        <PracticeSessionProvider
+          settings={settings}
+          practiceData={practiceData}
+          tagCardSets={tagCardSets}
+          selectedTag={selectedTag}
+          tagsList={tagsList}
+          isCramming={isCramming}
+          setIsCramming={setIsCramming}
+          handleMemoTagChange={setSelectedTag}
+          fetchPracticeData={fetchPracticeData}
+          dataPageTitle={dataPageTitle}
+          updateSetting={updateSetting}
+        >
+          <PracticeOverlay
+            isOpen={showPracticeOverlay}
+            onCloseCallback={onClosePracticeOverlayCallback}
+          />
+        </PracticeSessionProvider>
       </>
     </Blueprint.HotkeysProvider>
   );

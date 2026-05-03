@@ -35,22 +35,24 @@
  *   default (PROGRESSIVE) for invalid algorithm values without legacy name mapping.
  *   This is an intentional design decision to avoid long-term technical debt.
  *
- *   LBL architecture:
+ *   LBL architecture (Mini-Deck model):
  *   Child blocks in LBL mode have their own independent Session entries
  *   in the data page (same structure as any other card). The parent block
  *   only stores algorithm, interaction, and nextDueDate (computed from children).
+ *
+ *   Classification rule: LBL decks are classified from their children's
+ *   collective state via classifyLblDeck(), never from the parent's own
+ *   dateCreated or nextDueDate. This eliminates the fragile dependency
+ *   on parent fields that can become stale after session restarts.
  */
 
 import * as dateUtils from '~/utils/date';
 
-interface SessionCommon {
-  nextDueDate?: Date;
-  dateCreated?: Date;
-}
-
 export type Session = {
   algorithm: SchedulingAlgorithm;
   interaction: InteractionStyle;
+  nextDueDate?: Date;
+  dateCreated?: Date;
   sm2_repetitions?: number;
   sm2_interval?: number;
   sm2_eFactor?: number;
@@ -60,7 +62,7 @@ export type Session = {
   fixed_multiplier?: number;
   fixed_unit?: FixedTimeUnit;
   baseSessionData?: Session;
-} & SessionCommon;
+};
 
 export interface CardMeta {
   algorithm: SchedulingAlgorithm;
@@ -171,10 +173,7 @@ export const isSessionMastered = (
   session: Pick<Session, 'nextDueDate'> | undefined,
   now = new Date()
 ): boolean => {
-  if (!session?.nextDueDate) return false;
-  const dueDate = dateUtils.normalizeToDay(session.nextDueDate);
-  const today = dateUtils.normalizeToDay(now);
-  return dueDate > today;
+  return !!session?.nextDueDate && !isSessionDue(session, now);
 };
 
 export type ReviewStatus = 'new' | 'dueToday' | 'scheduled' | 'pastDue';
@@ -255,6 +254,100 @@ export const deriveParentNextDueDateFromChildSessions = (
   return earliestFutureDueDate || now;
 };
 
+/**
+ * LBL Mini-Deck classification result.
+ *
+ * LBL decks are classified from their children's collective state,
+ * never from the parent's own dateCreated or nextDueDate fields.
+ * This eliminates the fragile dependency on parent dateCreated staying
+ * in sync with child activity across session restarts.
+ *
+ * isCompletedToday: all children mastered AND at least one child graded today
+ * isDue:            any child due or has no session
+ * isNew:            all children have no session data
+ */
+export type LblDeckClassification = {
+  isCompletedToday: boolean;
+  isDue: boolean;
+  isNew: boolean;
+};
+
+/**
+ * Classify an LBL Deck's state from its children.
+ *
+ * This is the single source of truth for LBL deck classification.
+ * The pipeline (today.ts) and selectors (selectors.ts) MUST use this
+ * function instead of checking the parent's dateCreated or nextDueDate,
+ * because those fields can become stale after session restarts.
+ */
+export const classifyLblDeck = ({
+  childUids,
+  childSessionData,
+  now = new Date(),
+}: {
+  childUids: RecordUid[];
+  childSessionData: Record<string, Session | undefined>;
+  now?: Date;
+}): LblDeckClassification => {
+  if (!childUids.length) {
+    return { isCompletedToday: false, isDue: false, isNew: true };
+  }
+
+  const childStates = childUids.map((uid) => {
+    const session = childSessionData[uid] as Session & { isNew?: boolean };
+    return {
+      hasSession: !!session && !session.isNew,
+      isDue: !session || isSessionDue(session, now),
+      isMastered: !!session && !session.isNew && isSessionMastered(session, now),
+      gradedToday:
+        !!session &&
+        !session.isNew &&
+        !!session.dateCreated &&
+        dateUtils.isSameDay(session.dateCreated, now),
+    };
+  });
+
+  return {
+    isCompletedToday:
+      childStates.every((s) => s.isMastered) && childStates.some((s) => s.gradedToday),
+    isDue: childStates.some((s) => s.isDue),
+    isNew: childStates.every((s) => !s.hasSession),
+  };
+};
+
+export type CardClass = 'due' | 'new' | 'completed' | 'scheduled';
+
+// Unified card classification — single entry point for Normal and LBL cards.
+// LBL cards are classified from their children's collective state;
+// Normal cards are classified from their own session.
+export const classifyCard = ({
+  session,
+  lblChildren,
+  now = new Date(),
+}: {
+  session: Session | NewSession | undefined;
+  lblChildren?: { uids: RecordUid[]; sessions: Record<string, Session | undefined> };
+  now?: Date;
+}): CardClass => {
+  if (lblChildren) {
+    const c = classifyLblDeck({
+      childUids: lblChildren.uids,
+      childSessionData: lblChildren.sessions,
+      now,
+    });
+    if (c.isCompletedToday) return 'completed';
+    if (c.isNew) return 'new';
+    if (c.isDue) return 'due';
+    return 'scheduled';
+  }
+  const s = session as (Session & { isNew?: boolean }) | undefined;
+  if (!s || s.isNew) return 'new';
+  if (isSessionMastered(s, now)) {
+    return s.dateCreated && dateUtils.isSameDay(s.dateCreated, now) ? 'completed' : 'scheduled';
+  }
+  return 'due';
+};
+
 export const getAlgorithmIntent = (
   algorithm: SchedulingAlgorithm | undefined
 ): 'success' | 'warning' | 'primary' | 'none' => {
@@ -291,16 +384,12 @@ export const resolveBaseForCalculation = (
   currentSession: Session,
   now: Date = new Date()
 ): Session => {
-  const isSameDay =
-    !!currentSession.dateCreated &&
-    now.getFullYear() === currentSession.dateCreated.getFullYear() &&
-    now.getMonth() === currentSession.dateCreated.getMonth() &&
-    now.getDate() === currentSession.dateCreated.getDate();
+  const isSameDay = dateUtils.isSameDay(currentSession.dateCreated, now);
   const isForgot = currentSession.sm2_grade === 0;
 
-  if (!isSameDay) return currentSession;
-  if (isForgot) return currentSession;
-  if (currentSession.baseSessionData) return currentSession.baseSessionData;
+  if (isSameDay && !isForgot && currentSession.baseSessionData) {
+    return currentSession.baseSessionData;
+  }
   return currentSession;
 };
 

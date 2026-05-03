@@ -7,9 +7,6 @@ import { Icon } from '@blueprintjs/core';
 import useCloze from '~/hooks/useCloze';
 import { colors } from '~/theme';
 
-// Extract render logic into a standalone function so it can be called
-// both immediately (on card change) and debounced (on blur re-render).
-// See inline call sites below for why this matters.
 const renderRoamBlock = async ({
   containerEl,
   uid,
@@ -19,6 +16,8 @@ const renderRoamBlock = async ({
   setRenderedBlockElm,
   observerRef,
   registeredTextareasRef,
+  renderGenerationRef,
+  expectedGeneration,
 }: {
   containerEl: HTMLElement;
   uid: string;
@@ -28,29 +27,32 @@ const renderRoamBlock = async ({
   setRenderedBlockElm: (el: HTMLElement | null) => void;
   observerRef: React.MutableRefObject<MutationObserver | null>;
   registeredTextareasRef: React.MutableRefObject<Set<HTMLTextAreaElement>>;
+  renderGenerationRef: React.MutableRefObject<number>;
+  expectedGeneration: number;
 }) => {
+  const isStale = () => renderGenerationRef.current !== expectedGeneration;
+
   try {
     await window.roamAlphaAPI.ui.components.unmountNode({ el: containerEl });
+    if (isStale()) return;
+
     await window.roamAlphaAPI.ui.components.renderBlock({ uid, el: containerEl });
+    if (isStale()) return;
 
     const roamBlockElm = containerEl.querySelector('.rm-block') as HTMLElement | null;
+    if (isStale()) return;
     setRenderedBlockElm(roamBlockElm);
     const isCollapsed = roamBlockElm?.classList.contains('rm-block--closed');
     if (autoExpandRef.current && isCollapsed) {
-      const expandControlBtn = containerEl.querySelector('.block-expand .rm-caret');
-      domUtils.simulateMouseClick(expandControlBtn);
-      await asyncUtils.sleep(100);
-      domUtils.simulateMouseClick(expandControlBtn);
+      domUtils.expandBlockOnPage(uid);
     } else if (!autoExpandRef.current && !isCollapsed) {
       domUtils.collapseBlockOnPage(uid);
     }
 
-    // Disconnect any existing observer
     if (observerRef.current) {
       observerRef.current.disconnect();
     }
 
-    // Add a mutation observer to detect dynamically added textareas
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
@@ -73,7 +75,6 @@ const renderRoamBlock = async ({
     observer.observe(containerEl, { childList: true, subtree: true });
     observerRef.current = observer;
 
-    // Notify parent that rendering is complete
     onRenderComplete?.();
   } catch (err) {
     console.error('Memo: Failed to render block', err);
@@ -83,7 +84,6 @@ const renderRoamBlock = async ({
 const CardBlock = ({
   refUid,
   showAnswers,
-  setHasCloze,
   breadcrumbs,
   showBreadcrumbs,
   onRenderComplete,
@@ -92,7 +92,6 @@ const CardBlock = ({
 }: {
   refUid: string;
   showAnswers: boolean;
-  setHasCloze: (_hasCloze: boolean) => void;
   breadcrumbs: BreadcrumbsType[];
   showBreadcrumbs: boolean;
   onRenderComplete?: () => void;
@@ -101,7 +100,7 @@ const CardBlock = ({
 }) => {
   const ref = React.useRef<HTMLDivElement | null>(null);
   const [renderedBlockElm, setRenderedBlockElm] = React.useState<HTMLElement | null>(null);
-  useCloze({ renderedBlockElm: renderedBlockElm as HTMLElement, hasClozeCallback: setHasCloze });
+  useCloze({ renderedBlockElm: renderedBlockElm as HTMLElement });
 
   const [forceUpdate, setForceUpdate] = React.useState(0);
 
@@ -112,6 +111,8 @@ const CardBlock = ({
 
   const registeredTextareasRef = React.useRef<Set<HTMLTextAreaElement>>(new Set());
 
+  const renderGenerationRef = React.useRef(0);
+
   React.useEffect(() => {
     refUidRef.current = refUid;
   }, [refUid]);
@@ -121,9 +122,6 @@ const CardBlock = ({
   }, [autoExpand]);
 
   const handleBlockBlur = React.useCallback(() => {
-    // In the practice dialog, blur-based re-rendering destroys the DOM
-    // and breaks Roam's focus management (arrow navigation, text selection).
-    // Skip re-rendering for dialog blocks — they are in a read-only context.
     const dialog = ref.current?.closest('[role="dialog"]');
     if (dialog) return;
 
@@ -132,15 +130,9 @@ const CardBlock = ({
     });
   }, []);
 
-  // ── Immediate render on card change ──
-  // Separated from the debounced blur re-render to prevent flash:
-  // When refUid changes, React commits the new render with the new
-  // showAnswers CSS immediately, but the Roam block inside ContentWrapper
-  // is still the OLD card's block until renderRoamBlock runs.  If we
-  // debounced this (like the blur re-render), the CSS would show/hide the
-  // old card's children with the new card's showAnswers for 100ms — a flash.
   React.useEffect(() => {
     if (!ref.current || !refUid) return;
+    const generation = ++renderGenerationRef.current;
     renderRoamBlock({
       containerEl: ref.current,
       uid: refUid,
@@ -150,17 +142,15 @@ const CardBlock = ({
       setRenderedBlockElm,
       observerRef,
       registeredTextareasRef,
+      renderGenerationRef,
+      expectedGeneration: generation,
     });
   }, [refUid, handleBlockBlur, onRenderComplete]);
 
-  // ── Debounced re-render for blur-based forceUpdate ──
-  // Textarea blur events can fire rapidly when the user is editing; the
-  // debounce coalesces these into a single re-render.  Does NOT include
-  // refUid in deps — card changes are handled by the immediate effect above.
-  // Including refUid here would cause a second render 100ms after every card
-  // transition (double the DOM work: unmount, re-mount, re-observer).
   React.useEffect(() => {
     if (!ref.current || !refUid) return;
+
+    const generation = ++renderGenerationRef.current;
 
     const debouncedReRender = asyncUtils.debounce(
       () =>
@@ -173,6 +163,8 @@ const CardBlock = ({
           setRenderedBlockElm,
           observerRef,
           registeredTextareasRef,
+          renderGenerationRef,
+          expectedGeneration: generation,
         }),
       100
     );
@@ -180,8 +172,6 @@ const CardBlock = ({
     debouncedReRender();
 
     return () => {
-      // Cancel any pending debounced re-render so it doesn't fire after
-      // this effect re-runs (stale closure would render wrong uid).
       debouncedReRender.cancel();
 
       registeredTextareasRef.current.forEach((textarea) => {
@@ -213,7 +203,6 @@ const ContentWrapper = styled.div<{
   showAnswers: boolean;
   hideChildren?: boolean;
 }>`
-  // To align bullet on the left + ref count on the right correctly
   position: relative;
   left: -14px;
   width: calc(100% + 19px);
@@ -223,11 +212,9 @@ const ContentWrapper = styled.div<{
   }
 
   & .rm-block-separator {
-    min-width: unset; // Keeping roam block from expanding 100
+    min-width: unset;
   }
 
-  // Only apply cloze hiding to custom clozes with {} syntax
-  // Roam's native ^^ highlighting (.rm-highlight) keeps its default styles
   .roam-Supermemo-cloze {
     background-color: ${(props) => (props.showAnswers ? colors.clozeVisible : colors.clozeHidden)};
     color: ${(props) => (props.showAnswers ? 'inherit' : 'transparent')};
@@ -241,7 +228,7 @@ const ContentWrapper = styled.div<{
 const Breadcrumbs = ({ breadcrumbs }) => {
   const items = breadcrumbs.map((breadcrumb, index) => ({
     current: index === breadcrumbs.length - 1,
-    text: breadcrumb.title || breadcrumb.string, // root pages have title but no string
+    text: breadcrumb.title || breadcrumb.string,
   }));
   return (
     <BreadCrumbWrapper className="rm-zoom zoom-path-view">

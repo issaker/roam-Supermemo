@@ -97,9 +97,9 @@ const Tag = styled(Blueprint.Tag)`
 `;
 
 const TagSelectorItem = ({ text, onClick, active, tagsList }) => {
-  const { today } = usePracticeSession();
-  const dueCount = today.tags[text].due;
-  const newCount = today.tags[text].new;
+  const { tagCardSets } = usePracticeSession();
+  const dueCount = tagCardSets[text]?.dueUids.length ?? 0;
+  const newCount = tagCardSets[text]?.newUids.length ?? 0;
 
   const index = tagsList.indexOf(text);
   const placement = index === tagsList.length - 1 ? 'bottom' : 'top';
@@ -250,7 +250,6 @@ const Header = ({
   const { algorithm, interaction } = useAlgorithmContext();
   const { showBreadcrumbs } = settings;
   const { currentIndex, cardQueueLength } = useSafeContext(MainContext);
-  const remainingTodayCount = cardQueueLength;
 
   const currentDisplayCount = currentIndex + 1;
 
@@ -297,10 +296,12 @@ const Header = ({
           />
         </span>
         <span className="text-sm mx-2 font-medium">
-          <span data-testid="display-count-current">{isDone ? 0 : currentDisplayCount}</span>
+          <span data-testid="display-count-current">
+            {isDone ? cardQueueLength : currentDisplayCount}
+          </span>
           <span className="opacity-50 mx-1">/</span>
           <span className="opacity-50" data-testid="display-count-total">
-            {isDone ? 0 : remainingTodayCount}
+            {cardQueueLength}
           </span>
         </span>
         <button

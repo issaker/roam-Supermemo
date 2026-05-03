@@ -1,7 +1,5 @@
 import {
-  CompletionStatus,
   RenderMode,
-  TodayInitial,
   sortNormalDueCardUids,
   getLblQueueState,
 } from '~/models/practice';
@@ -17,12 +15,6 @@ const makeSession = (overrides: Partial<Session> = {}): Session => ({
 });
 
 describe('practice models', () => {
-  it('TodayInitial starts empty and unstarted', () => {
-    expect(TodayInitial.combinedToday.status).toBe(CompletionStatus.Unstarted);
-    expect(TodayInitial.combinedToday.due).toBe(0);
-    expect(TodayInitial.combinedToday.new).toBe(0);
-  });
-
   it('RenderMode exposes stable review render options', () => {
     expect(RenderMode.Normal).toBe('normal');
     expect(RenderMode.AnswerFirst).toBe('answerFirst');

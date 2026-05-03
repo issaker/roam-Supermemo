@@ -1,11 +1,11 @@
 import * as React from 'react';
 import * as stringUtils from '~/utils/string';
+import * as asyncUtils from '~/utils/async';
 import { colors } from '~/theme';
 
 const BATCH_SIZE = 20;
 const BATCH_DELAY_MS = 2000;
 const CARD_DELAY_MS = 100;
-const cleanupSleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface HistoryCleanupProps {
   dataPageTitle: string;
@@ -97,9 +97,9 @@ const HistoryCleanupSection = ({
         });
 
         if ((i + 1) % BATCH_SIZE === 0) {
-          await cleanupSleep(BATCH_DELAY_MS);
+          await asyncUtils.sleep(BATCH_DELAY_MS);
         } else {
-          await cleanupSleep(CARD_DELAY_MS);
+          await asyncUtils.sleep(CARD_DELAY_MS);
         }
       }
 

@@ -58,8 +58,7 @@ import useCardBlock from '~/hooks/useCardBlock';
 import { generateNewSession } from '~/queries';
 import { undoCardSession } from '~/queries/save';
 
-import { CompletionStatus, RenderMode } from '~/models/practice';
-import { handlePracticeProps } from '~/app';
+import { RenderMode } from '~/models/practice';
 import { colors, getAlgorithmColor } from '~/theme';
 import { usePracticeSession, PracticeSessionContext } from '~/contexts/PracticeSessionContext';
 import { AlgorithmProvider } from '~/contexts/AlgorithmContext';
@@ -84,7 +83,7 @@ interface MainContextProps {
   setFixed_multiplier: (_multiplier: number) => void;
   fixed_unit: FixedTimeUnit;
   setFixed_unit: (_unit: FixedTimeUnit) => void;
-  onPracticeClick: (_props: handlePracticeProps) => void;
+  onPracticeClick: (_props: { sm2_grade?: number; refUid?: string }) => void;
   currentIndex: number;
   renderMode: RenderMode;
   isLineByLine: boolean;
@@ -128,21 +127,21 @@ export const MainContext = React.createContext<MainContextProps>({} as MainConte
 interface Props {
   isOpen: boolean;
   onCloseCallback: () => void;
-  onRestartCallback: () => void;
 }
 
-const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) => {
+const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
   const sessionContext = usePracticeSession();
   const {
     settings,
     practiceData,
-    today,
+    tagCardSets,
     selectedTag,
     isCramming,
     setIsCramming,
     handleMemoTagChange,
     dataPageTitle,
     updateSetting,
+    fetchPracticeData,
   } = sessionContext;
 
   const {
@@ -153,10 +152,9 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
     showModeBorders,
     autoCollapseBlocks,
   } = settings;
-  const todaySelectedTag = today.tags[selectedTag];
   const runtime = useReviewRuntime({
     practiceData,
-    today,
+    tagCardSets,
     selectedTag,
     isCramming,
     dataPageTitle,
@@ -164,7 +162,8 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
   const {
     facts,
     viewState,
-    deckSnapshot,
+    renderMode,
+    completedCount,
     currentPrimaryEntryId,
     currentCardRefUid,
     currentIndex,
@@ -174,13 +173,23 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
     setFocusedChildUid,
     resetChildViewState,
     setMaxVisitedChildIndex,
+    resetToFirstUnpracticed,
     ensureLatestSessions,
     reviewUnit,
     upsertLatestSessions,
     updateReviewConfigAction,
   } = runtime;
 
-  const renderMode = deckSnapshot.renderMode || RenderMode.Normal;
+  // 重启会话时定位到首张未练习卡片
+  const prevIsOpenRef = React.useRef(false);
+  React.useEffect(() => {
+    if (isOpen && !prevIsOpenRef.current) {
+      resetToFirstUnpracticed();
+    }
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, resetToFirstUnpracticed]);
+
+  const effectiveRenderMode = renderMode || RenderMode.Normal;
   const sessions = React.useMemo(() => {
     const effectiveSession = currentCardRefUid ? facts.latestByUid[currentCardRefUid] : undefined;
     return effectiveSession ? [effectiveSession] : [];
@@ -197,9 +206,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
     sessions,
   });
 
-  const totalCardsCount = deckSnapshot.statusSummary.new + deckSnapshot.statusSummary.due;
-  const hasCards = totalCardsCount > 0;
-
   const [fixed_multiplier, setFixed_multiplier] = React.useState<number>(
     isFixedTimeAlgorithm(algorithm) ? currentCardData?.fixed_multiplier || 3 : 3
   );
@@ -207,7 +213,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
     currentCardData?.fixed_unit || FixedTimeUnit.DAYS
   );
 
-  const isDone = deckSnapshot.status === CompletionStatus.Finished || !currentCardData;
+  const isDone = !currentCardRefUid;
 
   // Resolve the base session for SM2/Progressive/FixedTime calculation.
   // On same-day re-scoring, rewinds to baseSessionData (Forgot or previous day)
@@ -352,18 +358,17 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
   ]);
 
   const reviewStatus = React.useMemo<ReviewStatus | null>(() => {
-    if (isDone) return null;
+    if (!currentCardData) return null;
     return getReviewStatus({
       session: currentReviewSession,
       isNew: Boolean(!isLineByLineActive && isNew),
       now: new Date(),
     });
-  }, [isDone, currentReviewSession, isLineByLineActive, isNew]);
+  }, [currentCardData, currentReviewSession, isLineByLineActive, isNew]);
 
   const isLearned = React.useMemo(() => {
-    if (isDone) return false;
     return isSessionMastered(currentReviewSession, new Date());
-  }, [isDone, currentReviewSession]);
+  }, [currentReviewSession]);
 
   // LBL mode: resolve base from child session; Normal mode: use parent's baseCardData.
   const effectiveBaseCardData = React.useMemo(() => {
@@ -381,15 +386,14 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
   }, [isLineByLineActive, baseCardData, currentChildUid, childSessionData, algorithm]);
 
   const shouldShowAnswerFirst =
-    renderMode === RenderMode.AnswerFirst && hasBlockChildrenUids && !activeCard.showAnswers;
+    effectiveRenderMode === RenderMode.AnswerFirst &&
+    hasBlockChildrenUids &&
+    !activeCard.showAnswers;
 
   const onTagChange = async (tag) => {
-    setFocusedPrimaryUid(undefined);
-    resetChildViewState();
     handleMemoTagChange(tag);
     setIsCramming(false);
 
-    // To prevent 'space' key event from triggering dropdown
     await asyncUtils.sleep(200);
 
     if (document.activeElement instanceof HTMLElement) {
@@ -399,8 +403,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
 
   const onPracticeClick = React.useCallback(
     (gradeData) => {
-      if (isDone) return;
-
       if (isLineByLineActive && !lineByLineIsCardComplete) {
         onLineByLineGrade(gradeData.sm2_grade);
         return;
@@ -427,7 +429,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
       });
     },
     [
-      isDone,
       algorithm,
       interaction,
       fixed_multiplier,
@@ -447,9 +448,8 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
   );
 
   const onNextClick = React.useCallback(() => {
-    if (isDone) return;
     focusPrimaryByOffset(1);
-  }, [isDone, focusPrimaryByOffset]);
+  }, [focusPrimaryByOffset]);
 
   const onPrevClick = React.useCallback(() => {
     focusPrimaryByOffset(-1);
@@ -509,9 +509,10 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
         updateSetting(key, formSettings[key]);
       });
       setShowSettings(false);
-      onRestartCallback();
+      resetToFirstUnpracticed();
+      fetchPracticeData();
     },
-    [updateSetting, onRestartCallback]
+    [updateSetting, resetToFirstUnpracticed, fetchPracticeData]
   );
 
   usePracticeOverlayHotkeys({ onToggleBreadcrumbs: toggleBreadcrumbs });
@@ -644,7 +645,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
       setFixed_unit,
       onPracticeClick,
       currentIndex,
-      renderMode,
+      renderMode: effectiveRenderMode,
       isLineByLine: isLineByLineActive,
       lineByLineCurrentIndex: isLineByLineActive ? lineByLineCurrentChildIndex + 1 : 0,
       lineByLineTotal: isLineByLineActive ? childUidsList.length : 0,
@@ -664,7 +665,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
       setFixed_unit,
       onPracticeClick,
       currentIndex,
-      renderMode,
+      effectiveRenderMode,
       isLineByLineActive,
       lineByLineCurrentChildIndex,
       childUidsList,
@@ -679,7 +680,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
     ]
   );
 
-  if (!todaySelectedTag) {
+  if (!tagCardSets[selectedTag]) {
     return null;
   }
 
@@ -721,12 +722,11 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
                       lineByLineRevealedCount={lineByLineRevealedCount}
                       lineByLineCurrentChildIndex={lineByLineCurrentChildIndex}
                       childSessionData={childSessionData}
-                      setHasCloze={activeCard.setHasCloze}
                       showBreadcrumbs={showBreadcrumbs}
                       autoCollapseBlocks={autoCollapseBlocks}
                       showAnswers={showAnswers}
                       currentChildAlgorithm={activeCard.algorithm}
-                      setChildHasCloze={activeCard.setHasCloze}
+                      dueChildCount={dueChildCount}
                     />
                   ) : shouldShowAnswerFirst ? (
                     blockInfo.childrenUids?.map((uid) => (
@@ -734,7 +734,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
                         key={uid}
                         refUid={uid}
                         showAnswers={showAnswers}
-                        setHasCloze={activeCard.setHasCloze}
                         breadcrumbs={blockInfo.breadcrumbs}
                         showBreadcrumbs={false}
                         onRenderComplete={NOOP}
@@ -744,7 +743,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
                     <CardBlock
                       refUid={currentCardRefUid}
                       showAnswers={showAnswers}
-                      setHasCloze={activeCard.setHasCloze}
                       breadcrumbs={blockInfo.breadcrumbs}
                       showBreadcrumbs={showBreadcrumbs}
                       onRenderComplete={NOOP}
@@ -759,9 +757,9 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
                   <DoneIllustration />
                   <div>
                     You&apos;re all caught up! 🌟{' '}
-                    {deckSnapshot.statusSummary.completed > 0
-                      ? `Reviewed ${deckSnapshot.statusSummary.completed} ${stringUtils.pluralize(
-                          deckSnapshot.statusSummary.completed,
+                    {completedCount > 0
+                      ? `Reviewed ${completedCount} ${stringUtils.pluralize(
+                          completedCount,
                           'card',
                           'cards'
                         )} today.`
@@ -783,8 +781,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback, onRestartCallback }: Props) 
                   : setShowAnswers
               }
               showAnswers={showAnswers}
-              isDone={isDone}
-              hasCards={hasCards}
               onCloseCallback={onCloseCallback}
               currentCardData={currentCardData}
               onStartCrammingClick={onStartCrammingClick}

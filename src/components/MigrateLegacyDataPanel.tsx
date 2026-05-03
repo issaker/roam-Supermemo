@@ -37,6 +37,7 @@ const LEGACY_MODE_TO_CONFIG: Record<string, { algorithm: SchedulingAlgorithm; in
 import { updateReviewConfig, deduplicateSessionFields } from '~/queries';
 import { getPluginPageData, SESSION_SNAPSHOT_KEYS } from '~/queries/data';
 import { getStringBetween, parseConfigString } from '~/utils/string';
+import * as asyncUtils from '~/utils/async';
 import { progressiveInterval } from '~/practice';
 
 const CARD_META_BLOCK_NAME = 'meta';
@@ -44,8 +45,6 @@ const CARD_META_BLOCK_NAME = 'meta';
 const BATCH_SIZE = 20;
 const BATCH_DELAY_MS = 2000;
 const CARD_DELAY_MS = 100;
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const findMetaBlock = (cardChildren: any[] = []) =>
   cardChildren.find((child) => child?.string === CARD_META_BLOCK_NAME);
