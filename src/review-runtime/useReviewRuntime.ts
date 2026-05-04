@@ -94,24 +94,29 @@ export const useReviewRuntime = ({
   } = useQueue(cardSet, queueId, selectedTag);
 
   // 游标重定位：切换牌组、重启会话、日期变更时触发
-  const repositionRequestedRef = React.useRef(true);
+  const repositionRequestedRef = React.useRef<'reset' | 'next' | false>('reset');
   const [repositionVersion, setRepositionVersion] = React.useState(0);
 
   const [prevTag, setPrevTag] = React.useState(selectedTag);
   if (selectedTag !== prevTag) {
     setPrevTag(selectedTag);
-    repositionRequestedRef.current = true;
+    repositionRequestedRef.current = 'reset';
   }
 
   const today = new Date().toISOString().slice(0, 10);
   const [prevDate, setPrevDate] = React.useState(today);
   if (today !== prevDate) {
     setPrevDate(today);
-    repositionRequestedRef.current = true;
+    repositionRequestedRef.current = 'reset';
   }
 
   const resetToFirstUnpracticed = React.useCallback(() => {
-    repositionRequestedRef.current = true;
+    repositionRequestedRef.current = 'reset';
+    setRepositionVersion((v) => v + 1);
+  }, []);
+
+  const navigateToNextUnpracticed = React.useCallback(() => {
+    repositionRequestedRef.current = 'next';
     setRepositionVersion((v) => v + 1);
   }, []);
 
@@ -119,13 +124,26 @@ export const useReviewRuntime = ({
     if (!repositionRequestedRef.current) return;
     if (effectiveQueue.uids.length === 0) return;
 
+    const mode = repositionRequestedRef.current;
     repositionRequestedRef.current = false;
-    const firstUnpracticedIndex = effectiveQueue.uids.findIndex(
-      (uid, index) =>
-        index >= effectiveQueue.preCompletedCount && !effectiveQueue.completedUids.has(uid)
-    );
+
+    let targetIndex: number;
+    if (mode === 'next') {
+      const startIndex = viewStateRef.current.currentIndex + 1;
+      const nextIndex = effectiveQueue.uids.findIndex(
+        (uid, index) => index >= startIndex && !effectiveQueue.completedUids.has(uid)
+      );
+      targetIndex = nextIndex >= 0 ? nextIndex : effectiveQueue.uids.length;
+    } else {
+      const firstUnpracticedIndex = effectiveQueue.uids.findIndex(
+        (uid, index) =>
+          index >= effectiveQueue.preCompletedCount && !effectiveQueue.completedUids.has(uid)
+      );
+      targetIndex = firstUnpracticedIndex >= 0 ? firstUnpracticedIndex : effectiveQueue.uids.length;
+    }
+
     setViewState({
-      currentIndex: firstUnpracticedIndex >= 0 ? firstUnpracticedIndex : effectiveQueue.uids.length,
+      currentIndex: targetIndex,
       focusedChildUid: undefined,
       maxVisitedChildIndex: 0,
     });
@@ -365,11 +383,11 @@ export const useReviewRuntime = ({
             'forgot'
           );
           setShowAnswers(false);
-          setViewState((prev) => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
+          navigateToNextUnpracticed();
         } else {
           queueComplete(reinsertUid);
           setShowAnswers(false);
-          setViewState((prev) => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
+          navigateToNextUnpracticed();
         }
       } else {
         const childList = childUidsList!;
@@ -393,10 +411,10 @@ export const useReviewRuntime = ({
             lblNextReinsertOffset!,
             'lbl-next'
           );
-          setViewState((prev) => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
+          navigateToNextUnpracticed();
         } else if (isCardComplete) {
           queueComplete(parentUid!);
-          setViewState((prev) => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
+          navigateToNextUnpracticed();
         }
 
         setFocusedChildUid(childList[nextDueIndex]);
@@ -435,6 +453,7 @@ export const useReviewRuntime = ({
       queueReinsert,
       setFocusedChildUid,
       setMaxVisitedChildIndex,
+      navigateToNextUnpracticed,
     ]
   );
 
@@ -513,6 +532,7 @@ export const useReviewRuntime = ({
     resetChildViewState,
     setMaxVisitedChildIndex,
     resetToFirstUnpracticed,
+    navigateToNextUnpracticed,
     upsertLatestSession,
     upsertLatestSessions,
     ensureLatestSessions,

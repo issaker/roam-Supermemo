@@ -28,16 +28,32 @@ export const useQueue = (cardSet: CardSet | null, queueId: string, tag: string) 
   const [storeMap, setStoreMap] = React.useState<Map<string, QueueStore>>(new Map());
   const [activeQueueId, setActiveQueueId] = React.useState('');
 
+  // Bug修复：记录每个 queueId 构建快照时的 cardSet 指纹。
+  // 根因：Apply & Restart 后 queueId 不变（同一天+同一牌组），
+  // useQueue 跳过快照重建，导致新的 dailyLimit/weight% 分配结果被忽略。
+  // 方案：当同一 queueId 下 cardSet 变化时，重建快照以反映新的分配。
+  const builtFingerprintsRef = React.useRef<Map<string, string>>(new Map());
+
+  const cardSetFingerprint = cardSet
+    ? `${cardSet.due.join(',')}|${cardSet.new.join(',')}|${cardSet.completed.join(',')}`
+    : '';
+
   const hasCards =
     cardSet && cardSet.due.length + cardSet.new.length + cardSet.completed.length > 0;
   const currentStore = activeQueueId ? storeMap.get(activeQueueId) : undefined;
   const needsSnapshot = !currentStore || currentStore.snapshot.entries.length === 0;
+  const cardSetChanged =
+    queueId === activeQueueId &&
+    !!currentStore &&
+    cardSetFingerprint !== '' &&
+    cardSetFingerprint !== (builtFingerprintsRef.current.get(queueId) ?? '');
 
-  if (queueId !== activeQueueId || (needsSnapshot && hasCards)) {
-    if (queueId !== activeQueueId) {
+  if (queueId !== activeQueueId || (needsSnapshot && hasCards) || cardSetChanged) {
+    if (queueId !== activeQueueId || cardSetChanged) {
       setActiveQueueId(queueId);
     }
-    if (!storeMap.has(queueId) && hasCards) {
+    if (hasCards) {
+      builtFingerprintsRef.current.set(queueId, cardSetFingerprint);
       const newSnapshot = buildQueue(cardSet!, queueId, tag);
       setStoreMap((prev) => {
         const next = new Map(prev);

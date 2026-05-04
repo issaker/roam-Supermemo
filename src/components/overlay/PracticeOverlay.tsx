@@ -174,6 +174,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     resetChildViewState,
     setMaxVisitedChildIndex,
     resetToFirstUnpracticed,
+    navigateToNextUnpracticed,
     ensureLatestSessions,
     reviewUnit,
     upsertLatestSessions,
@@ -410,7 +411,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
       }
 
       if (isLineByLineActive && lineByLineIsCardComplete) {
-        focusPrimaryByOffset(1);
+        navigateToNextUnpracticed();
         return;
       }
 
@@ -442,7 +443,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
       currentPrimaryEntryId,
       baseCardData,
       currentCardData,
-      focusPrimaryByOffset,
+      navigateToNextUnpracticed,
       reviewUnit,
       setShowAnswers,
     ]
