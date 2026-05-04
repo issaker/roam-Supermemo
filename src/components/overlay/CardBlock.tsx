@@ -2,7 +2,6 @@ import * as React from 'react';
 import { Breadcrumbs as BreadcrumbsType } from '~/queries';
 import styled from '@emotion/styled';
 import * as domUtils from '~/utils/dom';
-import * as asyncUtils from '~/utils/async';
 import { Icon } from '@blueprintjs/core';
 import useCloze from '~/hooks/useCloze';
 import { colors } from '~/theme';
@@ -114,10 +113,6 @@ const CardBlock = ({
   const renderGenerationRef = React.useRef(0);
 
   React.useEffect(() => {
-    refUidRef.current = refUid;
-  }, [refUid]);
-
-  React.useEffect(() => {
     autoExpandRef.current = autoExpand;
   }, [autoExpand]);
 
@@ -130,50 +125,48 @@ const CardBlock = ({
     });
   }, []);
 
-  React.useEffect(() => {
-    if (!ref.current || !refUid) return;
-    const generation = ++renderGenerationRef.current;
-    renderRoamBlock({
-      containerEl: ref.current,
-      uid: refUid,
-      autoExpandRef,
-      onRenderComplete,
-      handleBlockBlur,
-      setRenderedBlockElm,
-      observerRef,
-      registeredTextareasRef,
-      renderGenerationRef,
-      expectedGeneration: generation,
-    });
-  }, [refUid, handleBlockBlur, onRenderComplete]);
-
+  // 单一渲染 effect：合并原双 effect，消除 generation 计数器竞态
+  // 原双 effect 各自递增 renderGenerationRef，初始挂载时 Effect 2 的递增
+  // 会使 Effect 1 的 renderRoamBlock 在 unmountNode 后被标记为过期而退出，
+  // 导致容器清空但未渲染（只有面包屑显示的 bug）。
+  // 合并后每次 effect 执行只递增一次 generation，且通过条件防抖保留原语义：
+  // refUid 变化时立即渲染，其余变化（forceUpdate/autoExpand）时 100ms 防抖。
   React.useEffect(() => {
     if (!ref.current || !refUid) return;
 
+    const isCardChange = refUid !== refUidRef.current;
+    refUidRef.current = refUid;
     const generation = ++renderGenerationRef.current;
 
-    const debouncedReRender = asyncUtils.debounce(
-      () =>
-        renderRoamBlock({
-          containerEl: ref.current!,
-          uid: refUidRef.current,
-          autoExpandRef,
-          onRenderComplete,
-          handleBlockBlur,
-          setRenderedBlockElm,
-          observerRef,
-          registeredTextareasRef,
-          renderGenerationRef,
-          expectedGeneration: generation,
-        }),
-      100
-    );
+    const doRender = () => {
+      renderRoamBlock({
+        containerEl: ref.current!,
+        uid: refUidRef.current,
+        autoExpandRef,
+        onRenderComplete,
+        handleBlockBlur,
+        setRenderedBlockElm,
+        observerRef,
+        registeredTextareasRef,
+        renderGenerationRef,
+        expectedGeneration: generation,
+      });
+    };
 
-    debouncedReRender();
+    let cancelled = false;
+
+    if (isCardChange) {
+      doRender();
+    } else {
+      const timer = setTimeout(doRender, 100);
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+      };
+    }
 
     return () => {
-      debouncedReRender.cancel();
-
+      if (cancelled) return;
       registeredTextareasRef.current.forEach((textarea) => {
         textarea.removeEventListener('blur', handleBlockBlur);
       });
@@ -184,8 +177,7 @@ const CardBlock = ({
         observerRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [forceUpdate, autoExpand, handleBlockBlur, onRenderComplete]);
+  }, [refUid, forceUpdate, autoExpand, handleBlockBlur, onRenderComplete]);
 
   return (
     <div>

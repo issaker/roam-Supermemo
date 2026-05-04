@@ -178,16 +178,17 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     reviewUnit,
     upsertLatestSessions,
     updateReviewConfigAction,
+    checkDeleted,
   } = runtime;
 
-  // 重启会话时定位到首张未练习卡片
   const prevIsOpenRef = React.useRef(false);
   React.useEffect(() => {
     if (isOpen && !prevIsOpenRef.current) {
       resetToFirstUnpracticed();
+      checkDeleted();
     }
     prevIsOpenRef.current = isOpen;
-  }, [isOpen, resetToFirstUnpracticed]);
+  }, [isOpen, resetToFirstUnpracticed, checkDeleted]);
 
   const effectiveRenderMode = renderMode || RenderMode.Normal;
   const sessions = React.useMemo(() => {

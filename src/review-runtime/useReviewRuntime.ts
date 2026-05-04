@@ -90,6 +90,7 @@ export const useReviewRuntime = ({
     effectiveQueue,
     complete: queueComplete,
     reinsert: queueReinsert,
+    checkDeleted,
   } = useQueue(cardSet, queueId, selectedTag);
 
   // 游标重定位：切换牌组、重启会话、日期变更时触发
@@ -517,5 +518,6 @@ export const useReviewRuntime = ({
     ensureLatestSessions,
     reviewUnit,
     updateReviewConfigAction,
+    checkDeleted,
   };
 };

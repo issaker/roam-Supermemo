@@ -3,7 +3,8 @@ import { EffectiveQueue, QueuePatch, QueueSnapshot } from './types';
 
 export const applyPatches = (
   snapshot: QueueSnapshot | null,
-  patches: QueuePatch[]
+  patches: QueuePatch[],
+  removedUids: Set<RecordUid> = new Set()
 ): EffectiveQueue => {
   if (!snapshot)
     return { uids: [], completedUids: new Set(), preCompletedCount: 0, uniqueCount: 0 };
@@ -34,10 +35,18 @@ export const applyPatches = (
     uids.splice(insertAt, 0, r.uid);
   }
 
+  const removedPreCompletedCount = snapshot.entries
+    .slice(0, snapshot.preCompletedCount)
+    .filter((e) => removedUids.has(e.uid)).length;
+
+  removedUids.forEach((uid) => {
+    completedUids.delete(uid);
+  });
+
   return {
-    uids,
+    uids: uids.filter((uid) => !removedUids.has(uid)),
     completedUids,
-    preCompletedCount: snapshot.preCompletedCount,
-    uniqueCount: snapshot.entries.length,
+    preCompletedCount: snapshot.preCompletedCount - removedPreCompletedCount,
+    uniqueCount: snapshot.entries.length - removedUids.size,
   };
 };
