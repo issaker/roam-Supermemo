@@ -39,12 +39,7 @@ import {
   deriveParentNextDueDateFromChildSessions,
   isSessionDue,
 } from '~/models/session';
-import {
-  createChildBlock,
-  getOrCreateBlockOnPage,
-  getOrCreateChildBlock,
-  getOrCreatePage,
-} from '~/queries/utils';
+import { createChildBlock, ensureDataBlock } from '~/queries/utils';
 import {
   SESSION_SNAPSHOT_KEYS,
   getChildSessionData,
@@ -153,14 +148,10 @@ export const savePracticeData = async ({
   dateCreated?: Date;
   [key: string]: any;
 }) => {
-  await getOrCreatePage(dataPageTitle);
-  const dataBlockUid = await getOrCreateBlockOnPage(dataPageTitle, 'data', -1, {
-    open: false,
-    heading: 3,
-  });
-
-  const cardDataBlockUid = await getOrCreateChildBlock(dataBlockUid, `((${refUid}))`, 0, {
-    open: false,
+  const cardDataBlockUid = await ensureDataBlock({
+    dataPageTitle,
+    sectionName: 'data',
+    childTitle: `((${refUid}))`,
   });
 
   const referenceDate = dateCreated || new Date();
@@ -242,14 +233,10 @@ export const updateParentNextDueDate = async ({
   dataPageTitle: string;
   childSessions?: Record<string, any>;
 }) => {
-  await getOrCreatePage(dataPageTitle);
-  const dataBlockUid = await getOrCreateBlockOnPage(dataPageTitle, 'data', -1, {
-    open: false,
-    heading: 3,
-  });
-
-  const cardDataBlockUid = await getOrCreateChildBlock(dataBlockUid, `((${refUid}))`, 0, {
-    open: false,
+  const cardDataBlockUid = await ensureDataBlock({
+    dataPageTitle,
+    sectionName: 'data',
+    childTitle: `((${refUid}))`,
   });
 
   const childSessions =
@@ -292,14 +279,10 @@ export const updateReviewConfig = async ({
   algorithm?: SchedulingAlgorithm;
   interaction?: InteractionStyle;
 }) => {
-  await getOrCreatePage(dataPageTitle);
-  const dataBlockUid = await getOrCreateBlockOnPage(dataPageTitle, 'data', -1, {
-    open: false,
-    heading: 3,
-  });
-
-  const cardDataBlockUid = await getOrCreateChildBlock(dataBlockUid, `((${refUid}))`, 0, {
-    open: false,
+  const cardDataBlockUid = await ensureDataBlock({
+    dataPageTitle,
+    sectionName: 'data',
+    childTitle: `((${refUid}))`,
   });
 
   if (algorithm) {

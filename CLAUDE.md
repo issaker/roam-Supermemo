@@ -22,8 +22,8 @@ npm run test-debug     # TZ=UTC node --inspect-brk jest --runInBand --watch --ve
 ## Architecture — Three Layers
 
 ```
-Pipeline (queries/)          → pure functions, computes CardSet from Roam data
-Queue   (review-runtime/)    → QueueSnapshot + patches, session-stable
+Pipeline (queries/)          → 2-step: classifyAllCards → allocateDailyCards, computes TagCardSets from Roam data
+Queue   (review-runtime/)    → state.uids snapshot + reinsert + mask filtering, session-stable
 Runtime (review-runtime/)    → facts + viewState + queue, coordinates everything
 
 Card System (rendering / interaction)
@@ -39,13 +39,13 @@ useCardBlock(refUid, session)
 
 **LBL is a mini-deck.** One X-axis entry. Y-axis queue opens children in document order. Parent `nextDueDate` = earliest child due date.
 
-**Queue is snapshot, not computation.** Built once per session (date + tag + settings), never recomputed. Changes (complete, reinsert, undo) are patches on the snapshot.
+**Queue is snapshot, not computation.** Built once per session (date + tag + settings), never recomputed. Changes are handled by reinsert (insertion layer) and mask filtering (display layer), not by recomputing the snapshot.
 
 **Import path alias:** `~/*` maps to `./src/*` (configured in tsconfig.json and webpack). No relative import chains needed.
 
 ## Inviolable Rules
 
-1. **Queue is snapshot + patches.** `QueueSnapshot` is built once per session and never changes. All mutations (complete, reinsert, undo) append `QueuePatch` entries. The effective queue is derived from snapshot + patches.
+1. **Queue is snapshot + reinsert + mask.** `state.uids` is the single source of truth for ordering — built once per session and never recomputed. Insertion changes go through `reinsert(uid, afterUid, offset)` which directly modifies the snapshot. Display filtering (quota mask `cardSet` + blacklist mask `removedUids`) is a pure read layer that never modifies the snapshot.
 2. **No separate code paths for normal vs LBL in card interaction.** `useCardBlock` is the single card pipeline. `reviewUnit` is the single grading action.
 3. **Card algorithm from the card's OWN session.** When a card has its own session, its algorithm comes from that session (not a parent). For new cards without a session, `useCardBlock` accepts a `fallbackAlgorithm` parameter (LBL children pass the parent's algorithm; normal cards use `DEFAULT_REVIEW_CONFIG.algorithm`).
 4. **Unified card classification.** `classifyCard` is the single entry point for both Normal and LBL cards. LBL cards are classified from children's collective state via `classifyLblDeck`; Normal cards from their own session.
@@ -56,12 +56,10 @@ useCardBlock(refUid, session)
 |------|------|
 | `src/hooks/useCardBlock.ts` | Single card pipeline: block info, cloze guard, showAnswers. |
 | `src/review-runtime/useReviewRuntime.ts` | Unified hook: `SessionFacts` + `ReviewViewState` + inline actions (`reviewUnit`, `updateReviewConfigAction`). Uses `useQueue` for session-stable queue management. |
-| `src/review-runtime/selectors.ts` | Pure derivation: `deriveDeckSnapshot`, `deriveChildSessionMap`. |
-| `src/review-runtime/types.ts` | `SessionFacts`, `ReviewViewState`, `DeckSnapshot`. |
-| `src/review-runtime/queue/types.ts` | `QueueEntry`, `QueueSnapshot`, `QueuePatch`, `EffectiveQueue`, `CardSet`. |
-| `src/review-runtime/queue/buildQueue.ts` | Builds immutable `QueueSnapshot` from `CardSet`. |
-| `src/review-runtime/queue/applyPatches.ts` | Applies patches to snapshot → `EffectiveQueue`. |
-| `src/review-runtime/queue/useQueue.ts` | Hook: manages snapshot + patches. Session-stable — snapshot built once per session. |
+| `src/review-runtime/selectors.ts` | Pure derivation: `deriveChildSessionMap`. |
+| `src/review-runtime/types.ts` | `SessionFacts`, `ReviewViewState`. |
+| `src/review-runtime/queue/types.ts` | `CardSet` type (due/new/completed UID arrays + lblMeta). |
+| `src/review-runtime/queue/useQueue.ts` | Hook: manages `state.uids` snapshot + `reinsert` insertion layer + quota/blacklist mask filtering. Session-stable — snapshot built once per session. |
 | `src/hooks/useLineByLineReview.ts` | LBL Y-axis: child positioning, progressive reveal. Uses `deriveLblSubQueue`. Grading delegated to `reviewUnit`. |
 | `src/hooks/useCurrentCardData.tsx` | `currentCardData = latestSession` (alias). Optimistic `cardMeta` overlay with uid guard. |
 | `src/hooks/usePracticeData.tsx` | Practice data fetch from Roam. No freezing — queue stability is handled by `useQueue`. |
@@ -143,7 +141,7 @@ Do NOT remove `library.export: 'default'` from standalone config — Roam loads 
 
 **showAnswers reset ordering:** In `reviewUnit`, `setShowAnswers(false)` must execute BEFORE the `setViewState` that advances `currentIndex`. When keyboard shortcuts trigger grading (outside React's event batch context), the index advance synchronously re-renders and updates `activeSetShowAnswersRef.current` to the next card's setter. Calling `setShowAnswers(false)` first ensures the current card's override is reset.
 
-**Reinsert (Forgot / LBL-Next):** `queueReinsert(uid, afterIndex, offset, reason)` appends a `QueuePatch` of type `reinsert`. The patch records the virtual insertion position. `applyPatches` interleaves reinserted cards at their target positions without modifying the snapshot. Undo reinsert removes the corresponding patch. No duplicate entries in the snapshot — `uniqueCount` reflects real card count.
+**Reinsert (Forgot / LBL-Next):** `queueReinsert(uid, afterUid, offset)` directly modifies the `state.uids` snapshot. It removes the uid from its current position and re-inserts it `offset` positions after `afterUid`. This works on the snapshot layer, before display masks are applied. No separate patch type — reinsertion is a direct state mutation.
 
 **Optimistic updates:** `reviewUnit` does optimistic facts update → setShowAnswers reset → focus advance → async save to Roam. `updateReviewConfigAction` optimistically updates `facts.latestByUid` and `cardMeta` before the async Roam write.
 

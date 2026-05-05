@@ -7,7 +7,7 @@
  * positioning, and progressive reveal.  Grading is delegated to the unified
  * runtime action (reviewUnit).
  *
- * `lineByLineRevealedCount` is local view-state, not a mirrored session fact.
+ * `lineByLineRevealedCount` is local view-state, backed by facts.latestByUid.
  * It controls progressive reveal: moving down reveals one more line;
  * moving up hides all lines below the current one.
  */
@@ -19,7 +19,7 @@ import {
   isGradingAlgorithm,
   getSessionAlgorithm,
 } from '~/models/session';
-import { deriveLblSubQueue } from '~/models/practice';
+import { getLblQueueState } from '~/models/practice';
 
 export const shouldReinsertLblCard = ({
   currentChildIndex,
@@ -98,7 +98,7 @@ export default function useLineByLineReview({
   const [lineByLineRevealedCount, setLineByLineRevealedCount] = React.useState(0);
 
   const lblQueueState = React.useMemo(
-    () => deriveLblSubQueue(childUidsList, childSessionData, 0),
+    () => getLblQueueState(childUidsList, childSessionData, 0),
     [childUidsList, childSessionData]
   );
   const dueChildCount = lblQueueState.dueChildCount;
@@ -125,6 +125,11 @@ export default function useLineByLineReview({
   const currentChildIsLblNext = !isGradingAlgorithm(currentChildAlgorithm);
 
   const needsPositioningRef = React.useRef(true);
+
+  // 跟踪上一个子行 uid，用于区分初始加载和评分后行切换：
+  // 初始加载时 prevChildUid 为 undefined，不自动展示答案；
+  // 评分后行切换时 prevChildUid 有值，自动展示答案使导航按钮可见。
+  const prevChildUidRef = React.useRef<string | undefined>(undefined);
 
   React.useEffect(() => {
     if (!isLBLReviewMode || !childUidsList.length) {
@@ -166,6 +171,7 @@ export default function useLineByLineReview({
 
     if (!currentChildUid) {
       if (focusedChildUid) setFocusedChildUid(undefined);
+      prevChildUidRef.current = currentChildUid;
       return;
     }
 
@@ -174,6 +180,12 @@ export default function useLineByLineReview({
     }
     setMaxVisitedChildIndex(lineByLineCurrentChildIndex);
     setLineByLineRevealedCount((prev) => Math.max(prev, lineByLineCurrentChildIndex + 1));
+
+    // 评分后行切换：自动展示答案，使导航按钮(◀▶)可见
+    if (prevChildUidRef.current && prevChildUidRef.current !== currentChildUid) {
+      setShowAnswers(true);
+    }
+    prevChildUidRef.current = currentChildUid;
   }, [
     isLBLReviewMode,
     currentChildUid,
@@ -181,6 +193,7 @@ export default function useLineByLineReview({
     lineByLineCurrentChildIndex,
     setFocusedChildUid,
     setMaxVisitedChildIndex,
+    setShowAnswers,
   ]);
 
   const onLineByLineGrade = React.useCallback(

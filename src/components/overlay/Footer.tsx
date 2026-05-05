@@ -306,6 +306,8 @@ const Footer = ({
             activateButtonFn={activateButtonFn}
             showAnswerFn={showAnswerFn}
             activeButtonKey={activeButtonKey}
+            onPrevClick={onPrevClick}
+            onNextClick={nextFn}
           />
         ) : (
           <GradingControlsWrapper
@@ -324,21 +326,53 @@ const Footer = ({
   );
 };
 
-const AnswerHiddenControls = ({ activateButtonFn, showAnswerFn, activeButtonKey }) => (
-  <ControlButton
-    className="text-base font-medium py-1"
-    intent="none"
-    onClick={() => {
-      activateButtonFn('space-button', showAnswerFn);
-    }}
-    active={activeButtonKey === 'space-button'}
-    outlined
-  >
-    Show Answer{' '}
-    <span className="ml-2">
-      <ButtonTags>SPACE</ButtonTags>
-    </span>
-  </ControlButton>
+const AnswerHiddenControls = ({
+  activateButtonFn,
+  showAnswerFn,
+  activeButtonKey,
+  onPrevClick,
+  onNextClick,
+}) => (
+  <div className="flex items-center justify-evenly w-full">
+    <NavButton
+      type="button"
+      aria-label="Previous"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onPrevClick();
+      }}
+      className="bp3-button bp3-minimal"
+    >
+      ◀
+    </NavButton>
+    <ControlButton
+      className="text-base font-medium py-1"
+      intent="none"
+      onClick={() => {
+        activateButtonFn('space-button', showAnswerFn);
+      }}
+      active={activeButtonKey === 'space-button'}
+      outlined
+    >
+      Show Answer{' '}
+      <span className="ml-2">
+        <ButtonTags>SPACE</ButtonTags>
+      </span>
+    </ControlButton>
+    <NavButton
+      type="button"
+      aria-label="Next"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onNextClick();
+      }}
+      className="bp3-button bp3-minimal"
+    >
+      ▶
+    </NavButton>
+  </div>
 );
 
 const FinishedControls = ({ onStartCrammingClick, onCloseCallback, onPrevClick }) => {

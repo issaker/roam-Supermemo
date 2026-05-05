@@ -179,28 +179,25 @@ export const getSelectedTagPageBlocksIds = async (selectedTag: string): Promise<
   return filteredChildren.map((arr) => arr.uid);
 };
 
-const mapPluginPageDataLatest = (queryResultsData: any[]): Records =>
+const mapPluginPageDataGeneric = <T>(
+  queryResultsData: any[],
+  parser: (sessionChildren: any[], uid: string) => T
+): Record<string, T> =>
   queryResultsData
     .map((arr) => arr[0])[0]
     .children?.reduce((acc, cur) => {
       if (!cur?.string) return acc;
       const uid = getStringBetween(cur.string, '((', '))');
       const sessionChildren = cur.children?.filter(isSessionHeadingBlock) || [];
-      acc[uid] = parseLatestSession(sessionChildren, uid);
+      acc[uid] = parser(sessionChildren, uid);
       return acc;
-    }, {}) || {};
+    }, {} as Record<string, T>) || {};
+
+const mapPluginPageDataLatest = (queryResultsData: any[]): Records =>
+  mapPluginPageDataGeneric(queryResultsData, parseLatestSession) as Records;
 
 const mapPluginPageData = (queryResultsData: any[]): CompleteRecords =>
-  queryResultsData
-    .map((arr) => arr[0])[0]
-    .children?.reduce((acc, cur) => {
-      if (!cur?.string) return acc;
-      const uid = getStringBetween(cur.string, '((', '))');
-      const sessionChildren = cur.children?.filter(isSessionHeadingBlock) || [];
-      acc[uid] = parseSessionHistory(sessionChildren, uid);
-
-      return acc;
-    }, {}) || {};
+  mapPluginPageDataGeneric(queryResultsData, parseSessionHistory) as CompleteRecords;
 
 export const getPluginPageBlockDataQuery = `[
   :find (pull ?pluginPageChildren [

@@ -92,13 +92,13 @@ Settings → Data Migration panel. Converts `reviewMode::` → `algorithm::` + `
 
 ## Architecture — First Principles
 
-The queue is an immutable snapshot, not a computation. Built once per session, changed only by patches.
+The queue is an immutable snapshot, not a computation. Built once per session, modified by reinsert and filtered by display masks.
 
 ### Three-Layer Queue
 
 ```
 Pipeline (queries/)          → 2-step: classifyAllCards → allocateDailyCards, computes TagCardSets from Roam data
-Queue   (review-runtime/)    → QueueSnapshot + patches, session-stable
+Queue   (review-runtime/)    → state.uids snapshot + reinsert + mask filtering, session-stable
 Runtime (review-runtime/)    → facts + viewState + queue, coordinates everything
 
 Primary Queue (◀/▶): cards sorted by due-date urgency
@@ -135,7 +135,7 @@ Child blocks are the **real cards**. Each has its own independent `Session` with
 2. **LBL parent is a Mini-Deck, classified from children.** Only child blocks are real cards. The parent's `nextDueDate` is always derived from children at grading time. The pipeline classifies LBL decks from children's collective state (`classifyCard` → `classifyLblDeck`), never from the parent's `dateCreated`.
 3. **One kind of card rendering.** `activeCard = useCardBlock(activeUid, activeSession)`. Same hook, same pipeline.
 4. **One facts store, one view state.** `facts.latestByUid` holds every session. `viewState` holds position. Everything else is derived.
-5. **Queue is snapshot, not computation.** Built once per session (date + tag + settings), never recomputed. Changes (complete, reinsert, undo) are patches on the snapshot.
+5. **Queue is snapshot, not computation.** Built once per session (date + tag + settings), never recomputed. Insertion changes go through `reinsert` on the snapshot. Display filtering (quota mask + blacklist mask) is a pure read that never modifies the snapshot.
 
 ### Runtime (`src/review-runtime/`)
 
@@ -144,10 +144,8 @@ Child blocks are the **real cards**. Each has its own independent `Session` with
 | `types.ts` | `SessionFacts`, `ViewState` |
 | `selectors.ts` | `deriveChildSessionMap` |
 | `useReviewRuntime.ts` | Unified hook: facts + view state + `reviewUnit` + `updateReviewConfigAction` |
-| `queue/types.ts` | `QueueEntry`, `QueueSnapshot`, `QueuePatch`, `EffectiveQueue`, `CardSet` |
-| `queue/buildQueue.ts` | Builds immutable `QueueSnapshot` from `CardSet` |
-| `queue/applyPatches.ts` | Applies patches to snapshot → `EffectiveQueue` |
-| `queue/useQueue.ts` | Hook: manages snapshot + patches, session-stable |
+| `queue/types.ts` | `CardSet` type (due/new/completed UID arrays + lblMeta) |
+| `queue/useQueue.ts` | Hook: manages state.uids snapshot + reinsert insertion layer + quota/blacklist mask filtering |
 
 ### Key Modules
 
@@ -209,10 +207,12 @@ Roam loads via `<script>`. Missing default export → `Uncaught SyntaxError`.
 `resolveReviewConfig` returns PROGRESSIVE for unrecognized values. Old data MUST migrate via Data Migration panel. Permanent compat = technical debt.
 
 ### Why mirrored state is forbidden
-Every persistent review bug comes from state duplication. The queue snapshot + patch system eliminates the need for mirrored state: the snapshot is the single source of truth for queue contents, and patches are the single source of truth for mutations.
 
-### Patch ordering matters
-Patches are applied in order. An `undo_reinsert` must reference the exact `targetIndex` produced by the corresponding `reinsert` patch. If patches are applied out of order, the effective queue will be incorrect.
+Every persistent review bug comes from state duplication. The snapshot + reinsert + mask model eliminates the need for mirrored state: the snapshot is the single source of truth for queue ordering, reinsert is the single source of truth for card repositioning, and masks are the single source of truth for display visibility.
+
+### Reinsert works on the snapshot, before masks
+
+`reinsert(uid, afterUid, offset)` directly modifies the `state.uids` array — it works on the full snapshot before any display filtering. This means reinserted cards respect their new position in the snapshot regardless of which cards are currently visible through masks. The mask layers (quota + blacklist) are always applied after reinsertion, as the final display step.
 
 ### `resolveBaseForCalculation` — same-day re-scoring
 Prevents interval inflation (Good→Perfect stacking). Three rules: (1) non-same-day → use as-is, (2) same-day Forgot → use as-is, (3) same-day non-Forgot → rewind to `baseSessionData`.
@@ -238,10 +238,8 @@ src/
 │   ├── selectors.ts         # deriveChildSessionMap
 │   ├── useReviewRuntime.ts  # Unified runtime hook
 │   └── queue/
-│       ├── types.ts         # QueueEntry, QueueSnapshot, QueuePatch, CardSet
-│       ├── buildQueue.ts    # Builds immutable snapshot from CardSet
-│       ├── applyPatches.ts  # Applies patches to snapshot
-│       └── useQueue.ts      # Queue hook: snapshot + patches
+│       ├── types.ts         # CardSet type
+│       └── useQueue.ts      # Queue hook: snapshot + reinsert + mask
 ├── hooks/
 │   ├── useCardBlock.ts      # Card pipeline (normal & LBL)
 │   ├── useCurrentCardData.tsx

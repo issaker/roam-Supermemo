@@ -48,8 +48,7 @@ import {
   InteractionStyle,
   ReviewStatus,
 } from '~/models/session';
-import useLineByLineReview, { shouldReinsertLblCard } from '~/hooks/useLineByLineReview';
-export { shouldReinsertLblCard };
+import useLineByLineReview from '~/hooks/useLineByLineReview';
 import usePracticeOverlayHotkeys from '~/hooks/usePracticeOverlayHotkeys';
 import useBlockInfo from '~/hooks/useBlockInfo';
 import useCurrentCardData from '~/hooks/useCurrentCardData';

@@ -5,13 +5,14 @@ import {
   SchedulingAlgorithm,
   DEFAULT_REVIEW_CONFIG,
   getSessionAlgorithm,
+  isGradingAlgorithm,
 } from '~/models/session';
 
 const CLOZE_PATTERN = /\{.+?\}/;
 
 /**
  * showAnswer 全局性质：
- * - 默认隐藏，仅用户主动点击 setShowAnswers(true) 时展开
+ * - 评分算法(SM2)默认隐藏，非评分算法(PROGRESSIVE/FIXED_TIME)默认展示
  * - refUid 变化（翻页/导航）→ 自动清除旧卡片覆盖
  * - resetKey 变化（重插入/undo/换算法）→ 自动清除当前卡片覆盖
  *
@@ -74,7 +75,7 @@ const useCardBlock = (
     [refUid]
   );
 
-  const showAnswers = refUid ? (overrideMap[refUid] ?? false) : false;
+  const showAnswers = refUid ? overrideMap[refUid] ?? !isGradingAlgorithm(algorithm) : false;
 
   return {
     blockInfo,

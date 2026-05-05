@@ -4,7 +4,7 @@ import * as testUtils from '~/utils/testUtils';
 import * as dateUtils from '~/utils/date';
 
 import App from '~/app';
-import { shouldReinsertLblCard } from './PracticeOverlay';
+import { shouldReinsertLblCard } from '~/hooks/useLineByLineReview';
 import { SchedulingAlgorithm, InteractionStyle } from '~/models/session';
 import * as saveQueries from '~/queries/save';
 

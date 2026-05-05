@@ -17,7 +17,7 @@ import {
 } from '~/queries';
 import { generateNewSession } from '~/queries/utils';
 import { generatePracticeData } from '~/practice';
-import { deriveLblSubQueue } from '~/models/practice';
+import { getLblQueueState } from '~/models/practice';
 import {
   deriveParentNextDueDateFromChildSessions,
   resolveBaseForCalculation,
@@ -139,64 +139,74 @@ export const useReviewRuntime = ({
   // rawUids 已由 useQueue 叠加了配额遮罩 + 黑名单遮罩，直接作为展示队列使用
   const filteredQueue = rawUids;
 
-  // ref 确保 reviewUnit/LBL Next 等回调始终使用最新的 filteredQueue，
-  // 避免闭包陈旧导致 afterUid 解析错误
   const filteredQueueRef = React.useRef(filteredQueue);
   filteredQueueRef.current = filteredQueue;
 
-  const repositionRequestedRef = React.useRef<'reset' | 'next' | false>('reset');
-  const [repositionVersion, setRepositionVersion] = React.useState(0);
+  const viewStateRef = React.useRef(viewState);
+  viewStateRef.current = viewState;
+
+  const initialPositionDoneRef = React.useRef(false);
+
+  const findFirstUnpracticedIndex = React.useCallback(() => {
+    if (!filteredQueueRef.current.length) return filteredQueueRef.current.length;
+    const idx = filteredQueueRef.current.findIndex((uid) => !completedUids.has(uid));
+    return idx >= 0 ? idx : filteredQueueRef.current.length;
+  }, [completedUids]);
+
+  const findNextUnpracticedIndex = React.useCallback(() => {
+    const startIndex = viewStateRef.current.currentIndex + 1;
+    const idx = filteredQueueRef.current.findIndex(
+      (uid, index) => index >= startIndex && !completedUids.has(uid)
+    );
+    return idx >= 0 ? idx : filteredQueueRef.current.length;
+  }, [completedUids]);
+
+  const resetToFirstUnpracticed = React.useCallback(() => {
+    setViewState({
+      currentIndex: findFirstUnpracticedIndex(),
+      focusedChildUid: undefined,
+      maxVisitedChildIndex: 0,
+    });
+  }, [findFirstUnpracticedIndex]);
+
+  const navigateToNextUnpracticed = React.useCallback(() => {
+    setViewState({
+      currentIndex: findNextUnpracticedIndex(),
+      focusedChildUid: undefined,
+      maxVisitedChildIndex: 0,
+    });
+  }, [findNextUnpracticedIndex]);
 
   const [prevTag, setPrevTag] = React.useState(selectedTag);
   if (selectedTag !== prevTag) {
     setPrevTag(selectedTag);
-    repositionRequestedRef.current = 'reset';
+    initialPositionDoneRef.current = false;
+    resetToFirstUnpracticed();
   }
 
   const [prevDate, setPrevDate] = React.useState(today);
   if (today !== prevDate) {
     setPrevDate(today);
-    repositionRequestedRef.current = 'reset';
+    initialPositionDoneRef.current = false;
+    resetToFirstUnpracticed();
   }
 
-  const resetToFirstUnpracticed = React.useCallback(() => {
-    repositionRequestedRef.current = 'reset';
-    setRepositionVersion((v) => v + 1);
-  }, []);
-
-  const navigateToNextUnpracticed = React.useCallback(() => {
-    repositionRequestedRef.current = 'next';
-    setRepositionVersion((v) => v + 1);
-  }, []);
-
+  // Bug fix: 首次定位需等待 filteredQueue 和 completedUids 均就绪。
+  // 原实现用 repositionRequestedRef('reset') + effect 依赖 [filteredQueue, completedUids]
+  // 实现"持续重试直到数据就绪"的语义。简化后需保留此行为：
+  // 首次加载时 PracticeOverlay 调用 resetToFirstUnpracticed() 可能早于数据到达，
+  // 此时 filteredQueue 为空或 completedUids 未就绪，定位结果不正确。
+  // 此 effect 在两者都就绪后执行首次定位，之后不再触发。
   React.useEffect(() => {
-    if (!repositionRequestedRef.current) return;
+    if (initialPositionDoneRef.current) return;
     if (filteredQueue.length === 0) return;
-
-    const mode = repositionRequestedRef.current;
-    repositionRequestedRef.current = false;
-
-    let targetIndex: number;
-    if (mode === 'next') {
-      const startIndex = viewStateRef.current.currentIndex + 1;
-      const nextIndex = filteredQueue.findIndex(
-        (uid, index) => index >= startIndex && !completedUids.has(uid)
-      );
-      targetIndex = nextIndex >= 0 ? nextIndex : filteredQueue.length;
-    } else {
-      const firstUnpracticedIndex = filteredQueue.findIndex((uid) => !completedUids.has(uid));
-      targetIndex = firstUnpracticedIndex >= 0 ? firstUnpracticedIndex : filteredQueue.length;
-    }
-
+    initialPositionDoneRef.current = true;
     setViewState({
-      currentIndex: targetIndex,
+      currentIndex: findFirstUnpracticedIndex(),
       focusedChildUid: undefined,
       maxVisitedChildIndex: 0,
     });
-  }, [repositionVersion, filteredQueue, completedUids]);
-
-  const viewStateRef = React.useRef(viewState);
-  viewStateRef.current = viewState;
+  }, [filteredQueue, completedUids, findFirstUnpracticedIndex]);
 
   const currentCardRefUid =
     viewState.currentIndex >= 0 && viewState.currentIndex < filteredQueue.length
@@ -266,16 +276,6 @@ export const useReviewRuntime = ({
     },
     []
   );
-
-  const upsertLatestSession = React.useCallback((uid: RecordUid, session: Records[string]) => {
-    setFacts((prev) => ({
-      ...prev,
-      latestByUid: {
-        ...prev.latestByUid,
-        [uid]: session,
-      },
-    }));
-  }, []);
 
   const upsertLatestSessions = React.useCallback((sessions: Partial<Records>) => {
     setFacts((prev) => ({
@@ -407,11 +407,13 @@ export const useReviewRuntime = ({
           });
         } else {
           const baseData = baseCardData || currentCardData;
-          upsertLatestSession(targetUid, {
-            ...baseData,
-            ...practiceResult,
-            dateCreated: now,
-          } as Session);
+          upsertLatestSessions({
+            [targetUid]: {
+              ...baseData,
+              ...practiceResult,
+              dateCreated: now,
+            } as Session,
+          });
         }
       }
 
@@ -426,7 +428,7 @@ export const useReviewRuntime = ({
         navigateToNextUnpracticed();
       } else {
         const childList = childUidsList!;
-        const nextDueIndex = deriveLblSubQueue(
+        const nextDueIndex = getLblQueueState(
           childList,
           updatedChildSessionsForParent!,
           lineByLineCurrentChildIndex! + 1
@@ -479,7 +481,6 @@ export const useReviewRuntime = ({
       dataPageTitle,
       facts.latestByUid,
       setPendingState,
-      upsertLatestSession,
       upsertLatestSessions,
       queueReinsert,
       setFocusedChildUid,
@@ -514,17 +515,21 @@ export const useReviewRuntime = ({
         if (isChild) {
           const existingChildSession =
             childSessionData?.[targetUid] || generateNewSession({ algorithm });
-          upsertLatestSession(targetUid, {
-            ...existingChildSession,
-            algorithm,
-          } as Session);
+          upsertLatestSessions({
+            [targetUid]: {
+              ...existingChildSession,
+              algorithm,
+            } as Session,
+          });
         } else {
           const currentSession = facts.latestByUid[targetUid] as Session | undefined;
-          upsertLatestSession(targetUid, {
-            ...(currentSession || {}),
-            algorithm,
-            interaction,
-          } as Session);
+          upsertLatestSessions({
+            [targetUid]: {
+              ...(currentSession || {}),
+              algorithm,
+              interaction,
+            } as Session,
+          });
 
           applyOptimisticCardMeta({
             ...cardMeta,
@@ -545,7 +550,7 @@ export const useReviewRuntime = ({
         setPendingState(targetUid, undefined);
       }
     },
-    [dataPageTitle, facts.latestByUid, setPendingState, upsertLatestSession]
+    [dataPageTitle, facts.latestByUid, setPendingState, upsertLatestSessions]
   );
 
   return {
@@ -564,7 +569,6 @@ export const useReviewRuntime = ({
     setMaxVisitedChildIndex,
     resetToFirstUnpracticed,
     navigateToNextUnpracticed,
-    upsertLatestSession,
     upsertLatestSessions,
     ensureLatestSessions,
     reviewUnit,

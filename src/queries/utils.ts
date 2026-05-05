@@ -330,3 +330,22 @@ export const batchFetchChildrenUids = async (
 
   return result;
 };
+
+export const ensureDataBlock = async ({
+  dataPageTitle,
+  sectionName,
+  childTitle,
+}: {
+  dataPageTitle: string;
+  sectionName: string;
+  childTitle: string;
+}): Promise<string> => {
+  await getOrCreatePage(dataPageTitle);
+  const sectionBlockUid = await getOrCreateBlockOnPage(dataPageTitle, sectionName, -1, {
+    open: false,
+    heading: 3,
+  });
+  return getOrCreateChildBlock(sectionBlockUid, childTitle, childTitle.startsWith('((') ? 0 : -1, {
+    open: false,
+  });
+};

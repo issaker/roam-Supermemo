@@ -208,7 +208,7 @@ export const getReviewStatus = ({
 // Shared scheduling semantics used by both NORMAL and LBL queue strategies.
 export const getDueChildIndices = (
   childUidsList: string[],
-  childSessionData: Record<string, Session>,
+  childSessionData: Record<string, Session | undefined>,
   now = new Date()
 ): number[] => {
   return childUidsList.reduce((indices, uid, index) => {
@@ -221,7 +221,7 @@ export const getDueChildIndices = (
 
 export const findNextDueChildIndex = (
   childUidsList: string[],
-  childSessionData: Record<string, Session>,
+  childSessionData: Record<string, Session | undefined>,
   fromIndex: number,
   now = new Date()
 ): number => {

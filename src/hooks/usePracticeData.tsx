@@ -5,7 +5,7 @@
  *
  * Architecture:
  *   On every refresh, tagCardSets are recomputed from scratch.
- *   Queue stability is handled by useQueue (immutable snapshot + patches),
+ *   Queue stability is handled by useQueue (immutable snapshot + reinsert + mask filtering),
  *   not by freezing tagCardSets here.
  *
  *   Race-condition guard: each effect run increments a version counter.

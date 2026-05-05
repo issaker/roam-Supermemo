@@ -4,7 +4,7 @@
  * Defines render modes and queue strategies for practice sessions.
  * - TagCardSet/TagCardSets: per-tag card classification (due/new/completed UIDs)
  * - sortNormalDueCardUids: primary queue ordering (urgency → difficulty → maturity)
- * - getLblQueueState / deriveLblSubQueue: LBL sub-queue (sequential reading order)
+ * - getLblQueueState: LBL sub-queue (sequential reading order)
  */
 import {
   RecordUid,
@@ -82,7 +82,7 @@ export const sortNormalDueCardUids = (
 // to the first due line at or after fromIndex. It never reorders child blocks.
 export const getLblQueueState = (
   childUidsList: string[],
-  childSessionData: Record<string, Session>,
+  childSessionData: Record<string, Session | undefined>,
   fromIndex = 0,
   now = new Date()
 ) => {
@@ -96,12 +96,3 @@ export const getLblQueueState = (
     isComplete: nextDueChildIndex >= childUidsList.length,
   };
 };
-
-// Single derivation point for LBL sub-queue state.
-// All consumers should use this instead of calling getLblQueueState directly.
-export const deriveLblSubQueue = (
-  childUids: string[],
-  childSessionData: Record<string, Session | undefined>,
-  fromIndex = 0,
-  now = new Date()
-) => getLblQueueState(childUids, childSessionData as Record<string, Session>, fromIndex, now);
