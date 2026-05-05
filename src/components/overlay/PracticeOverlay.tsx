@@ -50,7 +50,6 @@ import {
 } from '~/models/session';
 import useLineByLineReview, { shouldReinsertLblCard } from '~/hooks/useLineByLineReview';
 export { shouldReinsertLblCard };
-import useAutoCollapseBlocks from '~/hooks/useAutoCollapseBlocks';
 import usePracticeOverlayHotkeys from '~/hooks/usePracticeOverlayHotkeys';
 import useBlockInfo from '~/hooks/useBlockInfo';
 import useCurrentCardData from '~/hooks/useCurrentCardData';
@@ -150,7 +149,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     lblNextReinsertOffset,
     showBreadcrumbs,
     showModeBorders,
-    autoCollapseBlocks,
   } = settings;
   const runtime = useReviewRuntime({
     practiceData,
@@ -187,9 +185,19 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     if (isOpen && !prevIsOpenRef.current) {
       resetToFirstUnpracticed();
       checkDeleted();
+      setCardRefreshKey((k) => k + 1);
     }
     prevIsOpenRef.current = isOpen;
   }, [isOpen, resetToFirstUnpracticed, checkDeleted]);
+
+  // 定期检测卡片删除/恢复，确保黑名单可以响应外部变更（支持撤销恢复）
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const interval = setInterval(() => {
+      checkDeleted();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isOpen, checkDeleted]);
 
   const effectiveRenderMode = renderMode || RenderMode.Normal;
   const sessions = React.useMemo(() => {
@@ -216,6 +224,10 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
   );
 
   const isDone = !currentCardRefUid;
+
+  // 集中式 showAnswer 重置触发器：任何导致卡片"刷新"的操作（undo/换算法等）
+  // 只需递增此 key，useCardBlock 内部自动清除当前卡片覆盖
+  const [cardRefreshKey, setCardRefreshKey] = React.useState(0);
 
   // Resolve the base session for SM2/Progressive/FixedTime calculation.
   // On same-day re-scoring, rewinds to baseSessionData (Forgot or previous day)
@@ -323,13 +335,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     setShowAnswers,
   });
 
-  useAutoCollapseBlocks({
-    enabled: autoCollapseBlocks,
-    currentCardRefUid,
-    isLineByLineActive,
-    childUidsList,
-  });
-
   // There is only ONE kind of card.  One data source.
   // Both latestSession and childSessionData[uid] are facts.latestByUid[uid].
   const activeUid =
@@ -340,7 +345,8 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
   const activeCard = useCardBlock(
     activeUid,
     activeSession,
-    isLineByLineActive ? algorithm : undefined
+    isLineByLineActive ? algorithm : undefined,
+    cardRefreshKey
   );
   activeSetShowAnswersRef.current = activeCard.setShowAnswers;
   const { showAnswers } = activeCard;
@@ -427,7 +433,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
         baseCardData,
         currentCardData,
         ...(isFixedTimeAlgorithm(algorithm) && { fixed_multiplier, fixed_unit }),
-        setShowAnswers,
       });
     },
     [
@@ -445,7 +450,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
       currentCardData,
       navigateToNextUnpracticed,
       reviewUnit,
-      setShowAnswers,
     ]
   );
 
@@ -485,7 +489,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     if (Object.keys(freshData).length) {
       upsertLatestSessions(freshData);
     }
-    setShowAnswers(false);
+    setCardRefreshKey((k) => k + 1);
   }, [
     currentCardRefUid,
     isLineByLineActive,
@@ -494,7 +498,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     lineByLineCurrentChildIndex,
     dataPageTitle,
     upsertLatestSessions,
-    setShowAnswers,
   ]);
 
   const toggleBreadcrumbs = React.useCallback(() => {
@@ -579,9 +582,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
           applyOptimisticCardMeta,
           cardMeta,
         });
-        // Reset showAnswers so the new algorithm's default behavior
-        // (e.g. SM2 hides answer, Progressive auto-shows) takes effect.
-        setShowAnswers(false);
+        setCardRefreshKey((k) => k + 1);
         return;
       }
 
@@ -607,7 +608,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
       lineByLineCurrentChildIndex,
       childSessionData,
       updateReviewConfigAction,
-      setShowAnswers,
     ]
   );
 
@@ -725,7 +725,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
                       lineByLineCurrentChildIndex={lineByLineCurrentChildIndex}
                       childSessionData={childSessionData}
                       showBreadcrumbs={showBreadcrumbs}
-                      autoCollapseBlocks={autoCollapseBlocks}
                       showAnswers={showAnswers}
                       currentChildAlgorithm={activeCard.algorithm}
                       dueChildCount={dueChildCount}
@@ -891,7 +890,7 @@ const MOBILE_OVERLAY_STYLES = `
 `;
 
 const DialogBody = styled.div`
-  overflow-x: hidden; // because of tweaks we do in ContentWrapper container overflows
+  overflow-x: hidden;
   min-height: 200px;
 `;
 

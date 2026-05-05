@@ -207,13 +207,14 @@ export const allocateDailyCards = ({
 
   const result: TagCardSets = { ...tagCardSets };
 
-  // Zero out weight=0 decks (only dueUids/newUids; completedUids stays as-is)
+  // 权重归零的牌组完全排除：due、new、completed 均清空
   for (const tag of tagsList) {
     if (tag in weightMap && weightMap[tag] === 0) {
       result[tag] = {
         ...result[tag],
         dueUids: [],
         newUids: [],
+        completedUids: [],
       };
     }
   }

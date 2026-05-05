@@ -19,7 +19,6 @@ interface LineByLineViewProps {
   lineByLineCurrentChildIndex: number;
   childSessionData: Record<string, Session>;
   showBreadcrumbs: boolean;
-  autoCollapseBlocks: boolean;
   showAnswers: boolean;
   currentChildAlgorithm: SchedulingAlgorithm;
   dueChildCount: number;
@@ -32,7 +31,6 @@ const LineByLineView = ({
   lineByLineCurrentChildIndex,
   childSessionData,
   showBreadcrumbs,
-  autoCollapseBlocks,
   showAnswers,
   currentChildAlgorithm,
   dueChildCount,
@@ -66,15 +64,10 @@ const LineByLineView = ({
           <LineByLineItem key={uid} $isCurrent={isCurrentLine} $isMastered={!!isMastered}>
             <CardBlock
               refUid={uid}
-              showAnswers={
-                isCurrentGrading
-                  ? showAnswers
-                  : isMastered || showAnswers
-              }
+              showAnswers={isCurrentGrading ? showAnswers : isMastered || showAnswers}
               breadcrumbs={[]}
               showBreadcrumbs={false}
               onRenderComplete={NOOP}
-              autoExpand={isCurrentLine || !autoCollapseBlocks}
             />
           </LineByLineItem>
         );

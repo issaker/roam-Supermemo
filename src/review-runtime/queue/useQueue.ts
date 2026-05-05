@@ -1,13 +1,19 @@
 import * as React from 'react';
 import { RecordUid } from '~/models/session';
-import { CardSet, QueuePatch, QueueSnapshot } from './types';
-import { applyPatches } from './applyPatches';
-import { buildQueue } from './buildQueue';
+import { CardSet } from './types';
 
-type QueueStore = {
-  snapshot: QueueSnapshot;
-  patches: QueuePatch[];
-  removedUids: Set<RecordUid>;
+const buildInitialUids = (cardSet: CardSet): RecordUid[] => {
+  const seen = new Set<RecordUid>();
+  const uids: RecordUid[] = [];
+  const add = (uid: RecordUid) => {
+    if (seen.has(uid)) return;
+    seen.add(uid);
+    uids.push(uid);
+  };
+  cardSet.completed.forEach(add);
+  cardSet.due.forEach(add);
+  cardSet.new.forEach(add);
+  return uids;
 };
 
 const findDeletedUids = async (uids: string[]): Promise<string[]> => {
@@ -24,104 +30,155 @@ const findDeletedUids = async (uids: string[]): Promise<string[]> => {
   }
 };
 
-export const useQueue = (cardSet: CardSet | null, queueId: string, tag: string) => {
-  const [storeMap, setStoreMap] = React.useState<Map<string, QueueStore>>(new Map());
-  const [activeQueueId, setActiveQueueId] = React.useState('');
+type QueueState = {
+  uids: RecordUid[];
+};
 
-  // Bug修复：记录每个 queueId 构建快照时的 cardSet 指纹。
-  // 根因：Apply & Restart 后 queueId 不变（同一天+同一牌组），
-  // useQueue 跳过快照重建，导致新的 dailyLimit/weight% 分配结果被忽略。
-  // 方案：当同一 queueId 下 cardSet 变化时，重建快照以反映新的分配。
-  const builtFingerprintsRef = React.useRef<Map<string, string>>(new Map());
+/**
+ * 全量快照 + 两层遮罩 + 插入层
+ *
+ * ┌───────────────────┐
+ * │  state.uids（快照） │  全量有序 uid 序列，每日首次构建，不可变基础
+ * └─────────┬─────────┘
+ *           │
+ *   ┌───────┴───────┐
+ *   │   插入层修改    │  reinsert(uid, afterUid) 用 uid 定位，不感知遮罩
+ *   │  新卡片追加队尾  │
+ *   └───────┬───────┘
+ *           │
+ *   ┌───────┴───────┐
+ *   │   遮罩层过滤    │  纯展示过滤，不修改快照
+ *   │ ① 配额遮罩     │  quotaAllowed：cardSet 的 due/new/completed 合集
+ *   │ ② 黑名单遮罩   │  removedUidsMap：已删除 block 的 uid
+ *   └───────┬───────┘
+ *           │
+ *           ▼
+ *      展示队列 uids
+ */
 
-  const cardSetFingerprint = cardSet
-    ? `${cardSet.due.join(',')}|${cardSet.new.join(',')}|${cardSet.completed.join(',')}`
-    : '';
+export const useQueue = (cardSet: CardSet | null, queueId: string, _tag: string) => {
+  const [stateMap, setStateMap] = React.useState<Map<string, QueueState>>(new Map());
+  const [removedUidsMap, setRemovedUidsMap] = React.useState<Map<string, Set<RecordUid>>>(
+    new Map()
+  );
 
   const hasCards =
     cardSet && cardSet.due.length + cardSet.new.length + cardSet.completed.length > 0;
-  const currentStore = activeQueueId ? storeMap.get(activeQueueId) : undefined;
-  const needsSnapshot = !currentStore || currentStore.snapshot.entries.length === 0;
-  const cardSetChanged =
-    queueId === activeQueueId &&
-    !!currentStore &&
-    cardSetFingerprint !== '' &&
-    cardSetFingerprint !== (builtFingerprintsRef.current.get(queueId) ?? '');
 
-  if (queueId !== activeQueueId || (needsSnapshot && hasCards) || cardSetChanged) {
-    if (queueId !== activeQueueId || cardSetChanged) {
-      setActiveQueueId(queueId);
-    }
-    if (hasCards) {
-      builtFingerprintsRef.current.set(queueId, cardSetFingerprint);
-      const newSnapshot = buildQueue(cardSet!, queueId, tag);
-      setStoreMap((prev) => {
-        const next = new Map(prev);
-        next.set(queueId, { snapshot: newSnapshot, patches: [], removedUids: new Set() });
-        return next;
-      });
-    }
+  // 懒初始化：仅在 stateMap 中尚不存在该 queueId 且 cardSet 非空时创建
+  if (!stateMap.has(queueId) && hasCards) {
+    const initialUids = buildInitialUids(cardSet!);
+    setStateMap((prev) => {
+      const next = new Map(prev);
+      next.set(queueId, { uids: initialUids });
+      return next;
+    });
   }
 
-  const activeStore = activeQueueId ? storeMap.get(activeQueueId) : undefined;
-  const snapshot = activeStore?.snapshot ?? null;
-  const patches = activeStore?.patches;
-  const removedUids = activeStore?.removedUids;
-
-  const effectiveQueue = React.useMemo(
-    () => applyPatches(snapshot, patches ?? [], removedUids ?? new Set()),
-    [snapshot, patches, removedUids]
-  );
-
-  const appendPatches = React.useCallback(
-    (newPatches: QueuePatch[]) => {
-      setStoreMap((prev) => {
-        const store = prev.get(activeQueueId);
-        if (!store) return prev;
+  // 日内新增：cardSet 中出现的新 uid 追加到快照末尾
+  React.useEffect(() => {
+    if (!cardSet || !hasCards) return;
+    setStateMap((prev) => {
+      const state = prev.get(queueId);
+      if (!state) {
+        const allCardUids = [...cardSet.completed, ...cardSet.due, ...cardSet.new];
         const next = new Map(prev);
-        next.set(activeQueueId, {
-          ...store,
-          patches: [...store.patches, ...newPatches],
-        });
+        next.set(queueId, { uids: allCardUids });
+        return next;
+      }
+      const existingSet = new Set(state.uids);
+      const allCardUids = [...cardSet.completed, ...cardSet.due, ...cardSet.new];
+      const newUids = allCardUids.filter((uid) => !existingSet.has(uid));
+      if (newUids.length === 0) return prev;
+      const next = new Map(prev);
+      next.set(queueId, { uids: [...state.uids, ...newUids] });
+      return next;
+    });
+  }, [queueId, cardSet, hasCards]);
+
+  // 配额遮罩集合：cardSet 中所有应展示的 uid
+  const quotaAllowed = React.useMemo(() => {
+    if (!cardSet) return new Set<RecordUid>();
+    return new Set([...cardSet.completed, ...cardSet.due, ...cardSet.new]);
+  }, [cardSet]);
+
+  // 展示层：全量快照 → 配额遮罩 → 黑名单遮罩
+  const uids = React.useMemo(() => {
+    const state = stateMap.get(queueId);
+    const removed = removedUidsMap.get(queueId);
+    if (!state) return [];
+    let result = state.uids;
+    result = result.filter((uid) => quotaAllowed.has(uid));
+    if (removed && removed.size > 0) {
+      result = result.filter((uid) => !removed.has(uid));
+    }
+    return result;
+  }, [queueId, stateMap, removedUidsMap, quotaAllowed]);
+
+  const reinsert = React.useCallback(
+    (uid: RecordUid, afterUid: RecordUid, offset: number) => {
+      setStateMap((prev) => {
+        const state = prev.get(queueId);
+        if (!state) return prev;
+        const nextUids = [...state.uids];
+
+        const existingIndex = nextUids.indexOf(uid);
+
+        let insertAt: number;
+        const afterPos = nextUids.indexOf(afterUid);
+        if (afterPos >= 0) {
+          insertAt = Math.min(afterPos + 1 + offset, nextUids.length);
+        } else if (existingIndex >= 0) {
+          insertAt = Math.min(existingIndex + 1 + offset, nextUids.length);
+        } else {
+          insertAt = nextUids.length;
+        }
+
+        if (existingIndex >= 0) {
+          nextUids.splice(existingIndex, 1);
+          const adjustedInsertAt = existingIndex < insertAt ? insertAt - 1 : insertAt;
+          nextUids.splice(adjustedInsertAt, 0, uid);
+        } else {
+          nextUids.splice(insertAt, 0, uid);
+        }
+
+        const next = new Map(prev);
+        next.set(queueId, { uids: nextUids });
         return next;
       });
     },
-    [activeQueueId]
-  );
-
-  const complete = React.useCallback(
-    (uid: RecordUid) => appendPatches([{ type: 'complete', uid }]),
-    [appendPatches]
-  );
-
-  const reinsert = React.useCallback(
-    (uid: RecordUid, afterIndex: number, offset: number, reason: 'forgot' | 'lbl-next') =>
-      appendPatches([{ type: 'reinsert', uid, afterIndex, offset, reason }]),
-    [appendPatches]
+    [queueId]
   );
 
   const checkDeleted = React.useCallback(async () => {
-    if (!snapshot || !activeQueueId) return;
-    const uids = snapshot.entries.map((e) => e.uid);
-    const deleted = await findDeletedUids(uids);
-    const newRemovedUids = new Set(deleted);
-    setStoreMap((prev) => {
-      const store = prev.get(activeQueueId);
-      if (!store) return prev;
+    if (!queueId) return;
+    const state = stateMap.get(queueId);
+    if (!state || state.uids.length === 0) return;
+
+    const deleted = await findDeletedUids(state.uids);
+
+    setRemovedUidsMap((prev) => {
       const next = new Map(prev);
-      next.set(activeQueueId, {
-        ...store,
-        removedUids: newRemovedUids,
-      });
+      if (deleted.length === 0) {
+        next.delete(queueId);
+      } else {
+        next.set(queueId, new Set(deleted));
+      }
       return next;
     });
-  }, [snapshot, activeQueueId]);
+  }, [queueId, stateMap]);
 
   React.useEffect(() => {
-    if (snapshot && snapshot.entries.length > 0) {
+    const state = stateMap.get(queueId);
+    if (state && state.uids.length > 0) {
       checkDeleted();
     }
-  }, [snapshot, checkDeleted]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queueId, stateMap]);
 
-  return { effectiveQueue, complete, reinsert, checkDeleted };
+  const removedUids = React.useMemo(() => {
+    return removedUidsMap.get(queueId) ?? new Set<RecordUid>();
+  }, [queueId, removedUidsMap]);
+
+  return { uids, removedUids, reinsert, checkDeleted };
 };

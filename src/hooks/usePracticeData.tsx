@@ -23,7 +23,6 @@ const usePracticeCardsData = ({
   dataPageTitle,
   cachedData,
   isCramming,
-  dailyLimit,
   shuffleCards,
   deckConfigs,
 }: {
@@ -32,7 +31,6 @@ const usePracticeCardsData = ({
   dataPageTitle: string;
   cachedData: any;
   isCramming: boolean;
-  dailyLimit: number;
   shuffleCards: boolean;
   deckConfigs: string;
 }) => {
@@ -46,8 +44,8 @@ const usePracticeCardsData = ({
   cachedDataRef.current = cachedData;
 
   const settingsFingerprint = React.useMemo(
-    () => `${dailyLimit}|${deckConfigs}|${shuffleCards}|${tagsList.join(',')}`,
-    [dailyLimit, deckConfigs, shuffleCards, tagsList]
+    () => `${deckConfigs}|${shuffleCards}|${tagsList.join(',')}`,
+    [deckConfigs, shuffleCards, tagsList]
   );
 
   const fetchVersionRef = React.useRef(0);
@@ -63,7 +61,6 @@ const usePracticeCardsData = ({
           await queries.getPracticeData({
             tagsList,
             dataPageTitle,
-            dailyLimit,
             isCramming,
             shuffleCards,
             cachedData: cachedDataRef.current,

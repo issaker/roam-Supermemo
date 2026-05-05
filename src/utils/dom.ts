@@ -22,15 +22,3 @@ export const simulateMouseClick = (element) => {
   const mouseClickEvents = ['mouseenter', 'mouseover', 'mousedown', 'click', 'mouseup'];
   simulateMouseEvents(element, mouseClickEvents);
 };
-
-export const collapseBlockOnPage = (uid: string) => {
-  return window.roamAlphaAPI.updateBlock({
-    block: { uid, open: false },
-  });
-};
-
-export const expandBlockOnPage = (uid: string) => {
-  return window.roamAlphaAPI.updateBlock({
-    block: { uid, open: true },
-  });
-};

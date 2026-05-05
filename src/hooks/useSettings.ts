@@ -45,7 +45,6 @@ export type Settings = {
   showBreadcrumbs: boolean;
   showModeBorders: boolean;
   dailynoteEnabled: boolean;
-  autoCollapseBlocks: boolean;
 };
 
 export const defaultSettings: Settings = {
@@ -61,7 +60,6 @@ export const defaultSettings: Settings = {
   showBreadcrumbs: false,
   showModeBorders: true,
   dailynoteEnabled: true,
-  autoCollapseBlocks: true,
 };
 
 const SETTING_TYPES = {
@@ -75,7 +73,6 @@ const SETTING_TYPES = {
   showBreadcrumbs: 'boolean',
   showModeBorders: 'boolean',
   dailynoteEnabled: 'boolean',
-  autoCollapseBlocks: 'boolean',
 } as const;
 
 const SETTING_KEYS = Object.keys(defaultSettings) as (keyof Settings)[];

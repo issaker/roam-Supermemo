@@ -19,13 +19,19 @@ const HistoryCleanupSection = ({
   onKeepCountChange,
 }: HistoryCleanupProps) => {
   const [status, setStatus] = React.useState<'idle' | 'running' | 'done' | 'error'>('idle');
-  const [progress, setProgress] = React.useState({ total: 0, cleaned: 0, deleted: 0, phase: '' });
+  const [progress, setProgress] = React.useState({
+    total: 0,
+    cleaned: 0,
+    deleted: 0,
+    orphaned: 0,
+    phase: '',
+  });
   const [errorDetail, setErrorDetail] = React.useState('');
 
   const runCleanup = async () => {
     if (keepCount < 0) return;
     setStatus('running');
-    setProgress({ total: 0, cleaned: 0, deleted: 0, phase: 'Scanning...' });
+    setProgress({ total: 0, cleaned: 0, deleted: 0, orphaned: 0, phase: 'Scanning...' });
     setErrorDetail('');
 
     try {
@@ -47,14 +53,77 @@ const HistoryCleanupSection = ({
       const dataChildren = queryResultsData.map((arr) => arr[0])[0]?.children || [];
 
       const total = dataChildren.length;
-      setProgress({ total, cleaned: 0, deleted: 0, phase: 'Scanning cards...' });
+      setProgress({ total, cleaned: 0, deleted: 0, orphaned: 0, phase: 'Scanning cards...' });
 
+      // Phase 1: Clean up orphaned sessions (blocks whose original card has been deleted)
+      const cardUids = dataChildren
+        .map((cardBlock) => stringUtils.getStringBetween(cardBlock.string || '', '((', '))'))
+        .filter((uid) => !!uid);
+
+      let orphanedCount = 0;
+
+      if (cardUids.length > 0) {
+        setProgress({
+          total,
+          cleaned: 0,
+          deleted: 0,
+          orphaned: 0,
+          phase: 'Checking orphaned sessions...',
+        });
+
+        const existingUidsQuery = `[
+          :find ?uid
+          :in $ [?uid ...]
+          :where [?block :block/uid ?uid] [?block :block/string ?str] [(not= ?str "")]
+        ]`;
+        const existingUidsResult = await window.roamAlphaAPI.q(existingUidsQuery, cardUids);
+        const existingUidsSet = new Set(existingUidsResult.map((arr) => arr[0]));
+
+        for (let i = 0; i < dataChildren.length; i++) {
+          const cardBlock = dataChildren[i];
+          const cardUid = stringUtils.getStringBetween(cardBlock.string || '', '((', '))');
+          if (!cardUid) continue;
+
+          if (!existingUidsSet.has(cardUid)) {
+            try {
+              await window.roamAlphaAPI.deleteBlock({ block: { uid: cardBlock.uid } });
+              orphanedCount++;
+            } catch (err) {
+              console.error(
+                `[Memo] History cleanup error deleting orphaned card block ${cardBlock.uid}:`,
+                err
+              );
+            }
+
+            if ((i + 1) % BATCH_SIZE === 0) {
+              await asyncUtils.sleep(BATCH_DELAY_MS);
+            } else {
+              await asyncUtils.sleep(CARD_DELAY_MS);
+            }
+          }
+        }
+      }
+
+      // Re-query after orphan cleanup to get fresh data
+      const freshQueryResultsData = await window.roamAlphaAPI.q(query, dataPageTitle, 'data');
+      const freshDataChildren = freshQueryResultsData.map((arr) => arr[0])[0]?.children || [];
+      const freshTotal = freshDataChildren.length;
+
+      // Phase 2: Clean up old date session blocks (existing logic)
       let cleaned = 0;
       let totalDeleted = 0;
       let errors = 0;
 
-      for (let i = 0; i < dataChildren.length; i++) {
-        const cardBlock = dataChildren[i];
+      setProgress({
+        total: freshTotal,
+        cleaned: 0,
+        deleted: 0,
+        orphaned: orphanedCount,
+        phase: 'Cleaning history...',
+      });
+
+      for (let i = 0; i < freshDataChildren.length; i++) {
+        const cardBlock = freshDataChildren[i];
         if (!cardBlock?.children) continue;
 
         const dateBlocks = cardBlock.children.filter((child) => {
@@ -66,10 +135,11 @@ const HistoryCleanupSection = ({
         if (dateBlocks.length <= keepCount) {
           cleaned++;
           setProgress({
-            total,
+            total: freshTotal,
             cleaned,
             deleted: totalDeleted,
-            phase: `Scanning (${i + 1}/${total})`,
+            orphaned: orphanedCount,
+            phase: `Cleaning (${cleaned}/${freshTotal})`,
           });
           continue;
         }
@@ -90,10 +160,11 @@ const HistoryCleanupSection = ({
         cleaned++;
 
         setProgress({
-          total,
+          total: freshTotal,
           cleaned,
           deleted: totalDeleted,
-          phase: `Cleaning (${cleaned}/${total})`,
+          orphaned: orphanedCount,
+          phase: `Cleaning (${cleaned}/${freshTotal})`,
         });
 
         if ((i + 1) % BATCH_SIZE === 0) {
@@ -103,7 +174,13 @@ const HistoryCleanupSection = ({
         }
       }
 
-      setProgress({ total, cleaned, deleted: totalDeleted, phase: 'Done' });
+      setProgress({
+        total: freshTotal,
+        cleaned,
+        deleted: totalDeleted,
+        orphaned: orphanedCount,
+        phase: 'Done',
+      });
       if (errors > 0) {
         setErrorDetail(`${errors} blocks had errors — check console for details.`);
       }
@@ -118,9 +195,9 @@ const HistoryCleanupSection = ({
     <div style={{ marginBottom: '20px', borderTop: '1px solid #394b59', paddingTop: '15px' }}>
       <span style={{ fontSize: '14px', fontWeight: 600 }}>Clean Up History Data</span>
       <p style={{ fontSize: '12px', color: colors.textMuted, margin: '5px 0 10px 0' }}>
-        Keep only the N most recent date session blocks per card. Older blocks beyond the specified
-        count will be deleted. This action cannot be undone. Cleanup remains manual by design to
-        avoid automatic heavy writes during normal review sessions.
+        Remove orphaned sessions (cards deleted from Roam but still in data) and keep only the N
+        most recent date session blocks per card. This action cannot be undone. Cleanup remains
+        manual by design to avoid automatic heavy writes during normal review sessions.
       </p>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
         <span style={{ fontSize: '12px' }}>Keep count:</span>
@@ -147,6 +224,7 @@ const HistoryCleanupSection = ({
           <div>{progress.phase}</div>
           <div>
             {progress.cleaned}/{progress.total} cards processed, {progress.deleted} blocks deleted
+            {progress.orphaned > 0 && `, ${progress.orphaned} orphaned sessions removed`}
           </div>
         </div>
       )}
@@ -154,7 +232,7 @@ const HistoryCleanupSection = ({
         <div>
           <div style={{ fontSize: '12px', color: '#0d8050' }}>
             Cleanup complete! {progress.cleaned} cards processed, {progress.deleted} expired blocks
-            deleted.
+            deleted{progress.orphaned > 0 && `, ${progress.orphaned} orphaned sessions removed`}.
           </div>
           {errorDetail && (
             <div style={{ fontSize: '12px', color: '#d29922', marginTop: '4px' }}>
@@ -165,7 +243,7 @@ const HistoryCleanupSection = ({
             className="bp3-button"
             onClick={() => {
               setStatus('idle');
-              setProgress({ total: 0, cleaned: 0, deleted: 0, phase: '' });
+              setProgress({ total: 0, cleaned: 0, deleted: 0, orphaned: 0, phase: '' });
             }}
             style={{ fontSize: '12px', marginTop: '8px' }}
           >
@@ -182,7 +260,7 @@ const HistoryCleanupSection = ({
             className="bp3-button"
             onClick={() => {
               setStatus('idle');
-              setProgress({ total: 0, cleaned: 0, deleted: 0, phase: '' });
+              setProgress({ total: 0, cleaned: 0, deleted: 0, orphaned: 0, phase: '' });
             }}
             style={{ fontSize: '12px', marginTop: '8px' }}
           >

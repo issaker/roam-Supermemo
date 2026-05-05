@@ -1,15 +1,30 @@
 import * as React from 'react';
 import { Breadcrumbs as BreadcrumbsType } from '~/queries';
 import styled from '@emotion/styled';
-import * as domUtils from '~/utils/dom';
 import { Icon } from '@blueprintjs/core';
 import useCloze from '~/hooks/useCloze';
 import { colors } from '~/theme';
 
+const expandBlock = async (uid: string) => {
+  try {
+    const blockData = window.roamAlphaAPI.pull('[:block/open]', [':block/uid', uid]);
+    if (blockData && blockData[':block/open'] === false) {
+      // 问题根因：renderBlock 渲染折叠 block 时不包含子 block 内容，
+      // 仅 DOM 移除 rm-block--closed 类无法使子内容出现。
+      // 解决方案：渲染前将 block 的 :block/open 设为 true，
+      // 使 renderBlock 输出完整的子 block DOM。
+      await window.roamAlphaAPI.updateBlock({
+        block: { uid, open: true },
+      });
+    }
+  } catch (err) {
+    console.error('Memo: Failed to expand block', err);
+  }
+};
+
 const renderRoamBlock = async ({
   containerEl,
   uid,
-  autoExpandRef,
   onRenderComplete,
   handleBlockBlur,
   setRenderedBlockElm,
@@ -20,7 +35,6 @@ const renderRoamBlock = async ({
 }: {
   containerEl: HTMLElement;
   uid: string;
-  autoExpandRef: React.MutableRefObject<boolean>;
   onRenderComplete?: () => void;
   handleBlockBlur: () => void;
   setRenderedBlockElm: (el: HTMLElement | null) => void;
@@ -32,6 +46,9 @@ const renderRoamBlock = async ({
   const isStale = () => renderGenerationRef.current !== expectedGeneration;
 
   try {
+    await expandBlock(uid);
+    if (isStale()) return;
+
     await window.roamAlphaAPI.ui.components.unmountNode({ el: containerEl });
     if (isStale()) return;
 
@@ -41,12 +58,6 @@ const renderRoamBlock = async ({
     const roamBlockElm = containerEl.querySelector('.rm-block') as HTMLElement | null;
     if (isStale()) return;
     setRenderedBlockElm(roamBlockElm);
-    const isCollapsed = roamBlockElm?.classList.contains('rm-block--closed');
-    if (autoExpandRef.current && isCollapsed) {
-      domUtils.expandBlockOnPage(uid);
-    } else if (!autoExpandRef.current && !isCollapsed) {
-      domUtils.collapseBlockOnPage(uid);
-    }
 
     if (observerRef.current) {
       observerRef.current.disconnect();
@@ -87,7 +98,6 @@ const CardBlock = ({
   showBreadcrumbs,
   onRenderComplete,
   hideChildren,
-  autoExpand = true,
 }: {
   refUid: string;
   showAnswers: boolean;
@@ -95,7 +105,6 @@ const CardBlock = ({
   showBreadcrumbs: boolean;
   onRenderComplete?: () => void;
   hideChildren?: boolean;
-  autoExpand?: boolean;
 }) => {
   const ref = React.useRef<HTMLDivElement | null>(null);
   const [renderedBlockElm, setRenderedBlockElm] = React.useState<HTMLElement | null>(null);
@@ -104,17 +113,12 @@ const CardBlock = ({
   const [forceUpdate, setForceUpdate] = React.useState(0);
 
   const refUidRef = React.useRef(refUid);
-  const autoExpandRef = React.useRef(autoExpand);
 
   const observerRef = React.useRef<MutationObserver | null>(null);
 
   const registeredTextareasRef = React.useRef<Set<HTMLTextAreaElement>>(new Set());
 
   const renderGenerationRef = React.useRef(0);
-
-  React.useEffect(() => {
-    autoExpandRef.current = autoExpand;
-  }, [autoExpand]);
 
   const handleBlockBlur = React.useCallback(() => {
     const dialog = ref.current?.closest('[role="dialog"]');
@@ -130,7 +134,7 @@ const CardBlock = ({
   // 会使 Effect 1 的 renderRoamBlock 在 unmountNode 后被标记为过期而退出，
   // 导致容器清空但未渲染（只有面包屑显示的 bug）。
   // 合并后每次 effect 执行只递增一次 generation，且通过条件防抖保留原语义：
-  // refUid 变化时立即渲染，其余变化（forceUpdate/autoExpand）时 100ms 防抖。
+  // refUid 变化时立即渲染，其余变化（forceUpdate）时 100ms 防抖。
   React.useEffect(() => {
     if (!ref.current || !refUid) return;
 
@@ -142,7 +146,6 @@ const CardBlock = ({
       renderRoamBlock({
         containerEl: ref.current!,
         uid: refUidRef.current,
-        autoExpandRef,
         onRenderComplete,
         handleBlockBlur,
         setRenderedBlockElm,
@@ -177,7 +180,7 @@ const CardBlock = ({
         observerRef.current = null;
       }
     };
-  }, [refUid, forceUpdate, autoExpand, handleBlockBlur, onRenderComplete]);
+  }, [refUid, forceUpdate, handleBlockBlur, onRenderComplete]);
 
   return (
     <div>
@@ -195,10 +198,6 @@ const ContentWrapper = styled.div<{
   showAnswers: boolean;
   hideChildren?: boolean;
 }>`
-  position: relative;
-  left: -14px;
-  width: calc(100% + 19px);
-
   & .rm-block-children {
     display: ${(props) => (props.showAnswers && !props.hideChildren ? 'flex' : 'none')};
   }
@@ -236,7 +235,7 @@ const Breadcrumbs = ({ breadcrumbs }) => {
 
 const BreadCrumbWrapper = styled.div`
   opacity: 0.7;
-  margin-left: 8px !important;
+  margin-left: 22px !important;
   margin-top: -4px !important;
 
   &.rm-zoom-item {

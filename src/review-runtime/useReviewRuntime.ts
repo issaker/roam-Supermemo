@@ -7,6 +7,7 @@ import {
   RecordUid,
   Session,
   SchedulingAlgorithm,
+  classifyCard,
 } from '~/models/session';
 import {
   getChildSessionData,
@@ -21,7 +22,7 @@ import {
   deriveParentNextDueDateFromChildSessions,
   resolveBaseForCalculation,
 } from '~/models/session';
-import { ReviewViewState, SessionFacts } from './types';
+import { ReviewViewState, SessionFacts, LatestSessionRecord } from './types';
 import { CardSet } from './queue/types';
 import { useQueue } from './queue/useQueue';
 
@@ -43,6 +44,43 @@ const mergeSourceIntoFacts = ({
     ...currentFacts,
     latestByUid,
   };
+};
+
+const deriveCompletedUids = (
+  cardSet: CardSet,
+  latestByUid: Record<RecordUid, LatestSessionRecord>,
+  todayStr: string
+): Set<RecordUid> => {
+  const [y, m, d] = todayStr.split('-').map(Number);
+  const now = new Date(y, m - 1, d, 23, 59, 59);
+  const result = new Set<RecordUid>();
+
+  // cardSet.completed 中的卡片已被 classifyAllCards 判定为已完成，直接标记
+  for (const uid of cardSet.completed) {
+    result.add(uid);
+  }
+
+  // 对 due 和 new 中的卡片重新分类，识别今天刚完成的
+  const checkUids = [...cardSet.due, ...cardSet.new];
+  for (const uid of checkUids) {
+    const session = latestByUid[uid] as Session | undefined;
+    const lblChildren = cardSet.lblMeta[uid]
+      ? {
+          uids: cardSet.lblMeta[uid],
+          sessions: Object.fromEntries(
+            cardSet.lblMeta[uid].map((childUid) => [
+              childUid,
+              latestByUid[childUid] as Session | undefined,
+            ])
+          ),
+        }
+      : undefined;
+    const cls = classifyCard({ session, lblChildren, now });
+    if (cls === 'completed') {
+      result.add(uid);
+    }
+  }
+  return result;
 };
 
 export const useReviewRuntime = ({
@@ -83,17 +121,29 @@ export const useReviewRuntime = ({
     };
   }, [tagCardSets, selectedTag]);
 
-  // 队列身份 = 日期 + 牌组，每日每牌组仅构建一次快照
-  const queueId = `${new Date().toISOString().slice(0, 10)}-${selectedTag}`;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const completedUids = React.useMemo(
+    () => deriveCompletedUids(cardSet, facts.latestByUid, today),
+    [cardSet, facts.latestByUid, today]
+  );
+
+  const queueId = `${today}-${selectedTag}`;
 
   const {
-    effectiveQueue,
-    complete: queueComplete,
+    uids: rawUids,
     reinsert: queueReinsert,
     checkDeleted,
   } = useQueue(cardSet, queueId, selectedTag);
 
-  // 游标重定位：切换牌组、重启会话、日期变更时触发
+  // rawUids 已由 useQueue 叠加了配额遮罩 + 黑名单遮罩，直接作为展示队列使用
+  const filteredQueue = rawUids;
+
+  // ref 确保 reviewUnit/LBL Next 等回调始终使用最新的 filteredQueue，
+  // 避免闭包陈旧导致 afterUid 解析错误
+  const filteredQueueRef = React.useRef(filteredQueue);
+  filteredQueueRef.current = filteredQueue;
+
   const repositionRequestedRef = React.useRef<'reset' | 'next' | false>('reset');
   const [repositionVersion, setRepositionVersion] = React.useState(0);
 
@@ -103,7 +153,6 @@ export const useReviewRuntime = ({
     repositionRequestedRef.current = 'reset';
   }
 
-  const today = new Date().toISOString().slice(0, 10);
   const [prevDate, setPrevDate] = React.useState(today);
   if (today !== prevDate) {
     setPrevDate(today);
@@ -122,7 +171,7 @@ export const useReviewRuntime = ({
 
   React.useEffect(() => {
     if (!repositionRequestedRef.current) return;
-    if (effectiveQueue.uids.length === 0) return;
+    if (filteredQueue.length === 0) return;
 
     const mode = repositionRequestedRef.current;
     repositionRequestedRef.current = false;
@@ -130,16 +179,13 @@ export const useReviewRuntime = ({
     let targetIndex: number;
     if (mode === 'next') {
       const startIndex = viewStateRef.current.currentIndex + 1;
-      const nextIndex = effectiveQueue.uids.findIndex(
-        (uid, index) => index >= startIndex && !effectiveQueue.completedUids.has(uid)
+      const nextIndex = filteredQueue.findIndex(
+        (uid, index) => index >= startIndex && !completedUids.has(uid)
       );
-      targetIndex = nextIndex >= 0 ? nextIndex : effectiveQueue.uids.length;
+      targetIndex = nextIndex >= 0 ? nextIndex : filteredQueue.length;
     } else {
-      const firstUnpracticedIndex = effectiveQueue.uids.findIndex(
-        (uid, index) =>
-          index >= effectiveQueue.preCompletedCount && !effectiveQueue.completedUids.has(uid)
-      );
-      targetIndex = firstUnpracticedIndex >= 0 ? firstUnpracticedIndex : effectiveQueue.uids.length;
+      const firstUnpracticedIndex = filteredQueue.findIndex((uid) => !completedUids.has(uid));
+      targetIndex = firstUnpracticedIndex >= 0 ? firstUnpracticedIndex : filteredQueue.length;
     }
 
     setViewState({
@@ -147,14 +193,14 @@ export const useReviewRuntime = ({
       focusedChildUid: undefined,
       maxVisitedChildIndex: 0,
     });
-  }, [repositionVersion, effectiveQueue]);
+  }, [repositionVersion, filteredQueue, completedUids]);
 
   const viewStateRef = React.useRef(viewState);
   viewStateRef.current = viewState;
 
   const currentCardRefUid =
-    viewState.currentIndex >= 0 && viewState.currentIndex < effectiveQueue.uids.length
-      ? effectiveQueue.uids[viewState.currentIndex]
+    viewState.currentIndex >= 0 && viewState.currentIndex < filteredQueue.length
+      ? filteredQueue[viewState.currentIndex]
       : undefined;
 
   const currentPrimaryEntryId = currentCardRefUid ? `card:${currentCardRefUid}` : undefined;
@@ -163,13 +209,13 @@ export const useReviewRuntime = ({
     (offset: number) => {
       setViewState((prev) => {
         const newIndex = prev.currentIndex + offset;
-        if (newIndex >= 0 && newIndex <= effectiveQueue.uids.length) {
+        if (newIndex >= 0 && newIndex <= filteredQueue.length) {
           return { ...prev, currentIndex: newIndex };
         }
         return prev;
       });
     },
-    [effectiveQueue.uids.length]
+    [filteredQueue.length]
   );
 
   const setFocusedPrimaryUid = React.useCallback(
@@ -178,12 +224,12 @@ export const useReviewRuntime = ({
         setViewState((prev) => ({ ...prev, currentIndex: 0 }));
         return;
       }
-      const index = effectiveQueue.uids.indexOf(uid);
+      const index = filteredQueue.indexOf(uid);
       if (index >= 0) {
         setViewState((prev) => ({ ...prev, currentIndex: index }));
       }
     },
-    [effectiveQueue.uids]
+    [filteredQueue]
   );
 
   const setFocusedChildUid = React.useCallback((uid?: string) => {
@@ -267,7 +313,6 @@ export const useReviewRuntime = ({
       interaction: InteractionStyle;
       forgotReinsertOffset: number;
       currentPrimaryEntryId?: string;
-      setShowAnswers: (show: boolean) => void;
       baseCardData?: Session;
       currentCardData?: Session;
       fixed_multiplier?: number;
@@ -286,7 +331,6 @@ export const useReviewRuntime = ({
         algorithm,
         interaction,
         forgotReinsertOffset,
-        setShowAnswers,
         baseCardData,
         currentCardData,
         fixed_multiplier,
@@ -376,19 +420,10 @@ export const useReviewRuntime = ({
       if (!isChild || isForgot) {
         const reinsertUid = isChild ? parentUid! : targetUid;
         if (isForgot && forgotReinsertOffset > 0) {
-          queueReinsert(
-            reinsertUid,
-            viewStateRef.current.currentIndex,
-            forgotReinsertOffset,
-            'forgot'
-          );
-          setShowAnswers(false);
-          navigateToNextUnpracticed();
-        } else {
-          queueComplete(reinsertUid);
-          setShowAnswers(false);
-          navigateToNextUnpracticed();
+          const afterUid = filteredQueueRef.current[viewStateRef.current.currentIndex];
+          queueReinsert(reinsertUid, afterUid, forgotReinsertOffset);
         }
+        navigateToNextUnpracticed();
       } else {
         const childList = childUidsList!;
         const nextDueIndex = deriveLblSubQueue(
@@ -396,9 +431,6 @@ export const useReviewRuntime = ({
           updatedChildSessionsForParent!,
           lineByLineCurrentChildIndex! + 1
         ).nextDueChildIndex;
-        const isCardComplete = nextDueIndex >= childList.length;
-
-        setShowAnswers(false);
 
         if (
           currentChildIsLblNext &&
@@ -407,18 +439,18 @@ export const useReviewRuntime = ({
         ) {
           queueReinsert(
             parentUid!,
-            viewStateRef.current.currentIndex,
-            lblNextReinsertOffset!,
-            'lbl-next'
+            filteredQueueRef.current[viewStateRef.current.currentIndex],
+            lblNextReinsertOffset!
           );
           navigateToNextUnpracticed();
-        } else if (isCardComplete) {
-          queueComplete(parentUid!);
+        } else if (nextDueIndex >= childList.length) {
           navigateToNextUnpracticed();
         }
 
-        setFocusedChildUid(childList[nextDueIndex]);
-        setMaxVisitedChildIndex(nextDueIndex);
+        if (nextDueIndex < childList.length) {
+          setFocusedChildUid(childList[nextDueIndex]);
+          setMaxVisitedChildIndex(nextDueIndex);
+        }
       }
 
       try {
@@ -449,7 +481,6 @@ export const useReviewRuntime = ({
       setPendingState,
       upsertLatestSession,
       upsertLatestSessions,
-      queueComplete,
       queueReinsert,
       setFocusedChildUid,
       setMaxVisitedChildIndex,
@@ -521,11 +552,11 @@ export const useReviewRuntime = ({
     facts,
     viewState,
     renderMode: tagCardSets[selectedTag]?.renderMode,
-    completedCount: effectiveQueue.completedUids.size,
+    completedCount: completedUids.size,
     currentPrimaryEntryId,
     currentCardRefUid,
     currentIndex: viewState.currentIndex,
-    cardQueueLength: effectiveQueue.uids.length,
+    cardQueueLength: filteredQueue.length,
     setFocusedPrimaryUid,
     focusPrimaryByOffset,
     setFocusedChildUid,

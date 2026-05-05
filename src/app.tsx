@@ -11,13 +11,14 @@ import useOnBlockInteract from '~/hooks/useOnBlockInteract';
 import useCommandPaletteAction from '~/hooks/useCommandPaletteAction';
 import useCachedData from '~/hooks/useCachedData';
 import useOnVisibilityStateChange from '~/hooks/useOnVisibilityStateChange';
+import { allocateDailyCards } from '~/queries/dataProcessing';
 
 const App = () => {
   const [showPracticeOverlay, setShowPracticeOverlay] = React.useState(false);
   const [isCramming, setIsCramming] = React.useState(false);
 
   const { settings, updateSetting } = useSettings();
-  const { deckConfigs, dataPageTitle, dailyLimit, shuffleCards } = settings;
+  const { dailyLimit, deckConfigs, dataPageTitle, shuffleCards } = settings;
   const { selectedTag, setSelectedTag, tagsList } = useTags({ deckConfigs });
 
   const { fetchCacheData, data: cachedData } = useCachedData({ dataPageTitle });
@@ -28,10 +29,14 @@ const App = () => {
     dataPageTitle,
     cachedData,
     isCramming,
-    dailyLimit,
     shuffleCards,
     deckConfigs,
   });
+
+  const filteredTagCardSets = React.useMemo(() => {
+    if (!dailyLimit || isCramming || !Object.keys(tagCardSets).length) return tagCardSets;
+    return allocateDailyCards({ tagCardSets, dailyLimit, tagsList, isCramming, deckConfigs });
+  }, [tagCardSets, dailyLimit, tagsList, isCramming, deckConfigs]);
 
   const refreshData = React.useCallback(() => {
     fetchCacheData();
@@ -102,11 +107,14 @@ const App = () => {
   return (
     <Blueprint.HotkeysProvider>
       <>
-        <SidePanelWidget onClickCallback={onShowPracticeOverlay} tagCardSets={tagCardSets} />
+        <SidePanelWidget
+          onClickCallback={onShowPracticeOverlay}
+          tagCardSets={filteredTagCardSets}
+        />
         <PracticeSessionProvider
           settings={settings}
           practiceData={practiceData}
-          tagCardSets={tagCardSets}
+          tagCardSets={filteredTagCardSets}
           selectedTag={selectedTag}
           tagsList={tagsList}
           isCramming={isCramming}

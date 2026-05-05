@@ -55,7 +55,6 @@ interface UseLineByLineReviewInput {
     childSessionData: Record<string, Session>;
     currentChildIsLblNext: boolean;
     lineByLineCurrentChildIndex: number;
-    setShowAnswers: (show: boolean) => void;
   }) => Promise<void>;
   forgotReinsertOffset: number;
   lblNextReinsertOffset: number;
@@ -207,7 +206,6 @@ export default function useLineByLineReview({
         childSessionData,
         currentChildIsLblNext,
         lineByLineCurrentChildIndex,
-        setShowAnswers,
       });
     },
     [
@@ -223,7 +221,6 @@ export default function useLineByLineReview({
       currentPrimaryEntryId,
       currentChildIsLblNext,
       reviewUnit,
-      setShowAnswers,
     ]
   );
 
@@ -236,21 +233,15 @@ export default function useLineByLineReview({
     if (lineByLineCurrentChildIndex <= 0) return;
     const newIndex = lineByLineCurrentChildIndex - 1;
     setFocusedChildUid(childUidsList[newIndex]);
-    // Progressive reveal: hide everything below the new current line.
     setLineByLineRevealedCount(newIndex + 1);
-    // Reset Show Answer so SM2 children require explicit reveal again.
-    setShowAnswers(false);
-  }, [lineByLineCurrentChildIndex, childUidsList, setFocusedChildUid, setShowAnswers]);
+  }, [lineByLineCurrentChildIndex, childUidsList, setFocusedChildUid]);
 
   const onLineByLineNext = React.useCallback(() => {
     if (lineByLineCurrentChildIndex >= childUidsList.length - 1) return;
     const newIndex = lineByLineCurrentChildIndex + 1;
     setFocusedChildUid(childUidsList[newIndex]);
-    // Progressive reveal: reveal the new line.
     setLineByLineRevealedCount((prev) => Math.max(prev, newIndex + 1));
-    // Reset Show Answer so SM2 children require explicit reveal again.
-    setShowAnswers(false);
-  }, [lineByLineCurrentChildIndex, childUidsList, setFocusedChildUid, setShowAnswers]);
+  }, [lineByLineCurrentChildIndex, childUidsList, setFocusedChildUid]);
 
   return {
     lineByLineRevealedCount,

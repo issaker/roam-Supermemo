@@ -45,12 +45,7 @@ import {
   batchFetchChildrenUids,
 } from './utils';
 import { DAILYNOTE_DECK_KEY } from '~/constants';
-import {
-  allocateDailyCards,
-  isSessionHeadingBlock,
-  parseLatestSession,
-  parseSessionHistory,
-} from './dataProcessing';
+import { isSessionHeadingBlock, parseLatestSession, parseSessionHistory } from './dataProcessing';
 export { SESSION_SNAPSHOT_KEYS } from './dataProcessing';
 
 export const getSortedDateBlocks = async (
@@ -77,7 +72,6 @@ export const getSortedDateBlocks = async (
 export const getPracticeData = async ({
   tagsList,
   dataPageTitle,
-  dailyLimit,
   isCramming,
   shuffleCards,
   cachedData,
@@ -85,7 +79,6 @@ export const getPracticeData = async ({
 }: {
   tagsList: string[];
   dataPageTitle: string;
-  dailyLimit: number;
   isCramming: boolean;
   shuffleCards: boolean;
   cachedData: Record<string, any>;
@@ -129,17 +122,9 @@ export const getPracticeData = async ({
     shuffleCards,
   });
 
-  const trimmedTagCardSets = allocateDailyCards({
-    tagCardSets,
-    dailyLimit,
-    tagsList,
-    isCramming,
-    deckConfigs,
-  });
-
   return {
     practiceData: pluginPageData,
-    tagCardSets: trimmedTagCardSets,
+    tagCardSets,
   };
 };
 
