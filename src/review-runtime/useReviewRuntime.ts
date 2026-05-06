@@ -139,74 +139,64 @@ export const useReviewRuntime = ({
   // rawUids 已由 useQueue 叠加了配额遮罩 + 黑名单遮罩，直接作为展示队列使用
   const filteredQueue = rawUids;
 
+  // ref 确保 reviewUnit/LBL Next 等回调始终使用最新的 filteredQueue，
+  // 避免闭包陈旧导致 afterUid 解析错误
   const filteredQueueRef = React.useRef(filteredQueue);
   filteredQueueRef.current = filteredQueue;
 
-  const viewStateRef = React.useRef(viewState);
-  viewStateRef.current = viewState;
-
-  const initialPositionDoneRef = React.useRef(false);
-
-  const findFirstUnpracticedIndex = React.useCallback(() => {
-    if (!filteredQueueRef.current.length) return filteredQueueRef.current.length;
-    const idx = filteredQueueRef.current.findIndex((uid) => !completedUids.has(uid));
-    return idx >= 0 ? idx : filteredQueueRef.current.length;
-  }, [completedUids]);
-
-  const findNextUnpracticedIndex = React.useCallback(() => {
-    const startIndex = viewStateRef.current.currentIndex + 1;
-    const idx = filteredQueueRef.current.findIndex(
-      (uid, index) => index >= startIndex && !completedUids.has(uid)
-    );
-    return idx >= 0 ? idx : filteredQueueRef.current.length;
-  }, [completedUids]);
-
-  const resetToFirstUnpracticed = React.useCallback(() => {
-    setViewState({
-      currentIndex: findFirstUnpracticedIndex(),
-      focusedChildUid: undefined,
-      maxVisitedChildIndex: 0,
-    });
-  }, [findFirstUnpracticedIndex]);
-
-  const navigateToNextUnpracticed = React.useCallback(() => {
-    setViewState({
-      currentIndex: findNextUnpracticedIndex(),
-      focusedChildUid: undefined,
-      maxVisitedChildIndex: 0,
-    });
-  }, [findNextUnpracticedIndex]);
+  const repositionRequestedRef = React.useRef<'reset' | 'next' | false>('reset');
+  const [repositionVersion, setRepositionVersion] = React.useState(0);
 
   const [prevTag, setPrevTag] = React.useState(selectedTag);
   if (selectedTag !== prevTag) {
     setPrevTag(selectedTag);
-    initialPositionDoneRef.current = false;
-    resetToFirstUnpracticed();
+    repositionRequestedRef.current = 'reset';
   }
 
   const [prevDate, setPrevDate] = React.useState(today);
   if (today !== prevDate) {
     setPrevDate(today);
-    initialPositionDoneRef.current = false;
-    resetToFirstUnpracticed();
+    repositionRequestedRef.current = 'reset';
   }
 
-  // Bug fix: 首次定位需等待 filteredQueue 和 completedUids 均就绪。
-  // 原实现用 repositionRequestedRef('reset') + effect 依赖 [filteredQueue, completedUids]
-  // 实现"持续重试直到数据就绪"的语义。简化后需保留此行为：
-  // 首次加载时 PracticeOverlay 调用 resetToFirstUnpracticed() 可能早于数据到达，
-  // 此时 filteredQueue 为空或 completedUids 未就绪，定位结果不正确。
-  // 此 effect 在两者都就绪后执行首次定位，之后不再触发。
+  const viewStateRef = React.useRef(viewState);
+  viewStateRef.current = viewState;
+
+  const resetToFirstUnpracticed = React.useCallback(() => {
+    repositionRequestedRef.current = 'reset';
+    setRepositionVersion((v) => v + 1);
+  }, []);
+
+  const navigateToNextUnpracticed = React.useCallback(() => {
+    repositionRequestedRef.current = 'next';
+    setRepositionVersion((v) => v + 1);
+  }, []);
+
   React.useEffect(() => {
-    if (initialPositionDoneRef.current) return;
+    if (!repositionRequestedRef.current) return;
     if (filteredQueue.length === 0) return;
-    initialPositionDoneRef.current = true;
+
+    const mode = repositionRequestedRef.current;
+    repositionRequestedRef.current = false;
+
+    let targetIndex: number;
+    if (mode === 'next') {
+      const startIndex = viewStateRef.current.currentIndex + 1;
+      const nextIndex = filteredQueue.findIndex(
+        (uid, index) => index >= startIndex && !completedUids.has(uid)
+      );
+      targetIndex = nextIndex >= 0 ? nextIndex : filteredQueue.length;
+    } else {
+      const firstUnpracticedIndex = filteredQueue.findIndex((uid) => !completedUids.has(uid));
+      targetIndex = firstUnpracticedIndex >= 0 ? firstUnpracticedIndex : filteredQueue.length;
+    }
+
     setViewState({
-      currentIndex: findFirstUnpracticedIndex(),
+      currentIndex: targetIndex,
       focusedChildUid: undefined,
       maxVisitedChildIndex: 0,
     });
-  }, [filteredQueue, completedUids, findFirstUnpracticedIndex]);
+  }, [repositionVersion, filteredQueue, completedUids]);
 
   const currentCardRefUid =
     viewState.currentIndex >= 0 && viewState.currentIndex < filteredQueue.length
