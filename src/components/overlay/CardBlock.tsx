@@ -32,6 +32,7 @@ const renderRoamBlock = async ({
   registeredTextareasRef,
   renderGenerationRef,
   expectedGeneration,
+  skipExpand,
 }: {
   containerEl: HTMLElement;
   uid: string;
@@ -42,11 +43,14 @@ const renderRoamBlock = async ({
   registeredTextareasRef: React.MutableRefObject<Set<HTMLTextAreaElement>>;
   renderGenerationRef: React.MutableRefObject<number>;
   expectedGeneration: number;
+  skipExpand?: boolean;
 }) => {
   const isStale = () => renderGenerationRef.current !== expectedGeneration;
 
   try {
-    await expandBlock(uid);
+    if (!skipExpand) {
+      await expandBlock(uid);
+    }
     if (isStale()) return;
 
     await window.roamAlphaAPI.ui.components.unmountNode({ el: containerEl });
@@ -98,6 +102,7 @@ const CardBlock = ({
   showBreadcrumbs,
   onRenderComplete,
   hideChildren,
+  skipExpand,
 }: {
   refUid: string;
   showAnswers: boolean;
@@ -105,6 +110,7 @@ const CardBlock = ({
   showBreadcrumbs: boolean;
   onRenderComplete?: () => void;
   hideChildren?: boolean;
+  skipExpand?: boolean;
 }) => {
   const ref = React.useRef<HTMLDivElement | null>(null);
   const [renderedBlockElm, setRenderedBlockElm] = React.useState<HTMLElement | null>(null);
@@ -153,6 +159,7 @@ const CardBlock = ({
         registeredTextareasRef,
         renderGenerationRef,
         expectedGeneration: generation,
+        skipExpand,
       });
     };
 
@@ -180,7 +187,7 @@ const CardBlock = ({
         observerRef.current = null;
       }
     };
-  }, [refUid, forceUpdate, handleBlockBlur, onRenderComplete]);
+  }, [refUid, forceUpdate, handleBlockBlur, onRenderComplete, skipExpand]);
 
   return (
     <div>

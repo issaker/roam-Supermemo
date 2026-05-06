@@ -68,6 +68,7 @@ const LineByLineView = ({
               breadcrumbs={[]}
               showBreadcrumbs={false}
               onRenderComplete={NOOP}
+              skipExpand={!isCurrentLine}
             />
           </LineByLineItem>
         );
