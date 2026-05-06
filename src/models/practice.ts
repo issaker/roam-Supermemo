@@ -6,14 +6,7 @@
  * - sortNormalDueCardUids: primary queue ordering (urgency → difficulty → maturity)
  * - getLblQueueState: LBL sub-queue (sequential reading order)
  */
-import {
-  RecordUid,
-  Records,
-  Session,
-  findNextDueChildIndex,
-  getDueChildIndices,
-  isSessionDue,
-} from './session';
+import { RecordUid, Records, Session, findNextDueChildIndex, getDueChildIndices } from './session';
 
 export enum RenderMode {
   Normal = 'normal',
@@ -30,15 +23,15 @@ export type TagCardSet = {
 
 export type TagCardSets = Record<string, TagCardSet>;
 
-// Primary queue strategy: NORMAL cards are selected by due status, then ordered by
-// urgency, difficulty, and maturity. This is the only place that defines that order.
+// Primary queue strategy: cards are pre-classified by classifyCard (authoritative),
+// then ordered by urgency, difficulty, and maturity. No re-filtering here —
+// LBL cards are classified from children's collective state, so checking the
+// parent's own nextDueDate would incorrectly exclude them.
 export const sortNormalDueCardUids = (
   sessionData: Records,
   {
-    isCramming = false,
     shuffle = false,
     shuffleFn,
-    now = new Date(),
   }: {
     isCramming?: boolean;
     shuffle?: boolean;
@@ -49,7 +42,7 @@ export const sortNormalDueCardUids = (
   const dueUids = Object.keys(sessionData).filter((cardUid) => {
     const latestSession = sessionData[cardUid] as Session & { isNew?: boolean };
     if (!latestSession || latestSession.isNew) return false;
-    return isCramming || isSessionDue(latestSession, now);
+    return true;
   });
 
   if (shuffle) {

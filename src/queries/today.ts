@@ -29,7 +29,6 @@ export const classifyAllCards = ({
   lblDeckMeta,
   deckConfigs,
   cachedData,
-  isCramming,
   shuffleCards,
 }: {
   tagsList: string[];
@@ -39,7 +38,6 @@ export const classifyAllCards = ({
   lblDeckMeta: Record<string, string[]>;
   deckConfigs: string;
   cachedData: Record<string, any>;
-  isCramming: boolean;
   shuffleCards: boolean;
 }): TagCardSets => {
   const parsedDeckConfigs = parseDeckConfigs(deckConfigs);
@@ -88,10 +86,8 @@ export const classifyAllCards = ({
     }
 
     const sortedDueUids = sortNormalDueCardUids(dueRecords, {
-      isCramming,
       shuffle: shuffleCards,
       shuffleFn: fisherYatesShuffle,
-      now,
     });
 
     const sortedNewUids = shuffleCards ? fisherYatesShuffle(newUids) : newUids.reverse();

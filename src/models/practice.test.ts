@@ -23,16 +23,14 @@ describe('practice models', () => {
 
 describe('sortNormalDueCardUids', () => {
   it('sorts due cards by urgency, difficulty, then maturity', () => {
-    const now = new Date('2026-04-25T08:00:00.000Z');
     const sessionData: Records = {
       card_a: makeSession({ nextDueDate: new Date('2026-04-22T00:00:00.000Z'), sm2_eFactor: 2.8, sm2_repetitions: 10 }),
       card_b: makeSession({ nextDueDate: new Date('2026-04-24T00:00:00.000Z'), sm2_eFactor: 1.3, sm2_repetitions: 0 }),
       card_c: makeSession({ nextDueDate: new Date('2026-04-22T00:00:00.000Z'), sm2_eFactor: 1.3, sm2_repetitions: 5 }),
       card_d: makeSession({ nextDueDate: new Date('2026-04-22T00:00:00.000Z'), sm2_eFactor: 1.3, sm2_repetitions: 1 }),
-      card_future: makeSession({ nextDueDate: new Date('2026-05-01T00:00:00.000Z') }),
     };
 
-    expect(sortNormalDueCardUids(sessionData, { now })).toEqual([
+    expect(sortNormalDueCardUids(sessionData)).toEqual([
       'card_d',
       'card_c',
       'card_a',
@@ -41,19 +39,31 @@ describe('sortNormalDueCardUids', () => {
   });
 
   it('can return shuffled due cards when requested', () => {
-    const now = new Date('2026-04-25T08:00:00.000Z');
     const sessionData: Records = {
       a: makeSession({ nextDueDate: new Date('2026-04-22T00:00:00.000Z') }),
       b: makeSession({ nextDueDate: new Date('2026-04-23T00:00:00.000Z') }),
     };
 
     const result = sortNormalDueCardUids(sessionData, {
-      now,
       shuffle: true,
       shuffleFn: (items) => [...items].reverse(),
     });
 
     expect(result).toEqual(['b', 'a']);
+  });
+
+  it('includes LBL parent cards whose own nextDueDate is in the future', () => {
+    const sessionData: Records = {
+      lbl_parent: makeSession({
+        interaction: InteractionStyle.LBL,
+        nextDueDate: new Date('2026-05-01T00:00:00.000Z'),
+      }),
+      normal_card: makeSession({ nextDueDate: new Date('2026-04-22T00:00:00.000Z') }),
+    };
+
+    const result = sortNormalDueCardUids(sessionData);
+    expect(result).toContain('lbl_parent');
+    expect(result).toContain('normal_card');
   });
 });
 

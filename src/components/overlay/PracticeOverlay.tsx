@@ -29,7 +29,7 @@ import * as asyncUtils from '~/utils/async';
 import * as stringUtils from '~/utils/string';
 import mediaQueries from '~/utils/mediaQueries';
 
-import CardBlock from '~/components/overlay/CardBlock';
+import CardBlock, { restoreAllBlocks } from '~/components/overlay/CardBlock';
 import Footer from '~/components/overlay/Footer';
 import Header from '~/components/overlay/Header';
 import LineByLineView from '~/components/overlay/LineByLineView';
@@ -128,6 +128,11 @@ interface Props {
 }
 
 const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
+  const handleClose = React.useCallback(() => {
+    restoreAllBlocks();
+    onCloseCallback();
+  }, [onCloseCallback]);
+
   const sessionContext = usePracticeSession();
   const {
     settings,
@@ -695,13 +700,13 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
             $algorithm={isLineByLineActive ? activeCard.algorithm : algorithm}
             $showModeBorders={showModeBorders}
             isOpen={isOpen}
-            onClose={onCloseCallback}
+            onClose={handleClose}
             className="pb-0"
             canEscapeKeyClose={true}
           >
             <Header
               className="bp3-dialog-header outline-none focus:outline-none focus-visible:outline-none"
-              onCloseCallback={onCloseCallback}
+              onCloseCallback={handleClose}
               onTagChange={onTagChange}
               status={reviewStatus}
               isDone={isDone}
@@ -781,7 +786,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
                   : setShowAnswers
               }
               showAnswers={showAnswers}
-              onCloseCallback={onCloseCallback}
+              onCloseCallback={handleClose}
               currentCardData={currentCardData}
               onStartCrammingClick={onStartCrammingClick}
               isLearned={isLearned}

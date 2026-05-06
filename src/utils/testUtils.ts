@@ -366,7 +366,6 @@ export class MockDataBuilder {
     const practiceData = await getPracticeData({
       tagsList: this.tags,
       dataPageTitle,
-      isCramming: !!settings.isCramming,
       shuffleCards: !!settings.shuffleCards,
       cachedData: {},
       deckConfigs: settings.deckConfigs || '[]',

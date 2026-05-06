@@ -22,7 +22,6 @@ const usePracticeCardsData = ({
   selectedTag,
   dataPageTitle,
   cachedData,
-  isCramming,
   shuffleCards,
   deckConfigs,
 }: {
@@ -30,7 +29,6 @@ const usePracticeCardsData = ({
   selectedTag: string;
   dataPageTitle: string;
   cachedData: any;
-  isCramming: boolean;
   shuffleCards: boolean;
   deckConfigs: string;
 }) => {
@@ -61,7 +59,6 @@ const usePracticeCardsData = ({
           await queries.getPracticeData({
             tagsList,
             dataPageTitle,
-            isCramming,
             shuffleCards,
             cachedData: cachedDataRef.current,
             deckConfigs,
@@ -76,7 +73,7 @@ const usePracticeCardsData = ({
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataPageTitle, refetchTrigger, isCramming, settingsFingerprint]);
+  }, [dataPageTitle, refetchTrigger, settingsFingerprint]);
 
   return {
     practiceData,

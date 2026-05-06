@@ -28,7 +28,6 @@ const App = () => {
     selectedTag,
     dataPageTitle,
     cachedData,
-    isCramming,
     shuffleCards,
     deckConfigs,
   });

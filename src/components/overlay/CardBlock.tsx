@@ -5,21 +5,39 @@ import { Icon } from '@blueprintjs/core';
 import useCloze from '~/hooks/useCloze';
 import { colors } from '~/theme';
 
+const expandedBlockOriginalStates = new Map<string, boolean>();
+
 const expandBlock = async (uid: string) => {
   try {
     const blockData = window.roamAlphaAPI.pull('[:block/open]', [':block/uid', uid]);
     if (blockData && blockData[':block/open'] === false) {
-      // 问题根因：renderBlock 渲染折叠 block 时不包含子 block 内容，
-      // 仅 DOM 移除 rm-block--closed 类无法使子内容出现。
-      // 解决方案：渲染前将 block 的 :block/open 设为 true，
-      // 使 renderBlock 输出完整的子 block DOM。
       await window.roamAlphaAPI.updateBlock({
         block: { uid, open: true },
       });
+      expandedBlockOriginalStates.set(uid, false);
     }
   } catch (err) {
     console.error('Memo: Failed to expand block', err);
   }
+};
+
+export const restoreBlock = async (uid: string) => {
+  const originalOpen = expandedBlockOriginalStates.get(uid);
+  if (originalOpen !== undefined) {
+    try {
+      await window.roamAlphaAPI.updateBlock({
+        block: { uid, open: originalOpen },
+      });
+      expandedBlockOriginalStates.delete(uid);
+    } catch (err) {
+      console.error('Memo: Failed to restore block', err);
+    }
+  }
+};
+
+export const restoreAllBlocks = async () => {
+  const uids = Array.from(expandedBlockOriginalStates.keys());
+  await Promise.all(uids.map((uid) => restoreBlock(uid)));
 };
 
 const renderRoamBlock = async ({
@@ -119,6 +137,19 @@ const CardBlock = ({
   const [forceUpdate, setForceUpdate] = React.useState(0);
 
   const refUidRef = React.useRef(refUid);
+  const prevRefUidForRestoreRef = React.useRef<string | undefined>(undefined);
+
+  React.useEffect(() => {
+    if (prevRefUidForRestoreRef.current && prevRefUidForRestoreRef.current !== refUid) {
+      restoreBlock(prevRefUidForRestoreRef.current);
+    }
+    prevRefUidForRestoreRef.current = refUid;
+    return () => {
+      if (prevRefUidForRestoreRef.current) {
+        restoreBlock(prevRefUidForRestoreRef.current);
+      }
+    };
+  }, [refUid]);
 
   const observerRef = React.useRef<MutationObserver | null>(null);
 

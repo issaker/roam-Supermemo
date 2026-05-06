@@ -72,14 +72,12 @@ export const getSortedDateBlocks = async (
 export const getPracticeData = async ({
   tagsList,
   dataPageTitle,
-  isCramming,
   shuffleCards,
   cachedData,
   deckConfigs,
 }: {
   tagsList: string[];
   dataPageTitle: string;
-  isCramming: boolean;
   shuffleCards: boolean;
   cachedData: Record<string, any>;
   deckConfigs: string;
@@ -118,7 +116,6 @@ export const getPracticeData = async ({
     lblDeckMeta,
     deckConfigs,
     cachedData,
-    isCramming,
     shuffleCards,
   });
 
