@@ -46,41 +46,22 @@ const mergeSourceIntoFacts = ({
   };
 };
 
-const deriveCompletedUids = (
-  cardSet: CardSet,
+const isCardCompletedToday = (
+  uid: RecordUid,
   latestByUid: Record<RecordUid, LatestSessionRecord>,
-  todayStr: string
-): Set<RecordUid> => {
-  const [y, m, d] = todayStr.split('-').map(Number);
-  const now = new Date(y, m - 1, d, 23, 59, 59);
-  const result = new Set<RecordUid>();
-
-  // cardSet.completed 中的卡片已被 classifyAllCards 判定为已完成，直接标记
-  for (const uid of cardSet.completed) {
-    result.add(uid);
-  }
-
-  // 对 due 和 new 中的卡片重新分类，识别今天刚完成的
-  const checkUids = [...cardSet.due, ...cardSet.new];
-  for (const uid of checkUids) {
-    const session = latestByUid[uid] as Session | undefined;
-    const lblChildren = cardSet.lblMeta[uid]
-      ? {
-          uids: cardSet.lblMeta[uid],
-          sessions: Object.fromEntries(
-            cardSet.lblMeta[uid].map((childUid) => [
-              childUid,
-              latestByUid[childUid] as Session | undefined,
-            ])
-          ),
-        }
-      : undefined;
-    const cls = classifyCard({ session, lblChildren, now });
-    if (cls === 'completed') {
-      result.add(uid);
-    }
-  }
-  return result;
+  lblMeta: CardSet['lblMeta'],
+  now: Date
+): boolean => {
+  const session = latestByUid[uid] as Session | undefined;
+  const lblChildren = lblMeta[uid]
+    ? {
+        uids: lblMeta[uid],
+        sessions: Object.fromEntries(
+          lblMeta[uid].map((childUid) => [childUid, latestByUid[childUid] as Session | undefined])
+        ),
+      }
+    : undefined;
+  return classifyCard({ session, lblChildren, now }) === 'completed';
 };
 
 export const useReviewRuntime = ({
@@ -122,11 +103,10 @@ export const useReviewRuntime = ({
   }, [tagCardSets, selectedTag]);
 
   const today = new Date().toISOString().slice(0, 10);
-
-  const completedUids = React.useMemo(
-    () => deriveCompletedUids(cardSet, facts.latestByUid, today),
-    [cardSet, facts.latestByUid, today]
-  );
+  const todayEnd = React.useMemo(() => {
+    const [y, m, d] = today.split('-').map(Number);
+    return new Date(y, m - 1, d, 23, 59, 59);
+  }, [today]);
 
   const queueId = `${today}-${selectedTag}`;
 
@@ -139,64 +119,71 @@ export const useReviewRuntime = ({
   // rawUids 已由 useQueue 叠加了配额遮罩 + 黑名单遮罩，直接作为展示队列使用
   const filteredQueue = rawUids;
 
-  // ref 确保 reviewUnit/LBL Next 等回调始终使用最新的 filteredQueue，
-  // 避免闭包陈旧导致 afterUid 解析错误
+  const completedCount = React.useMemo(
+    () =>
+      filteredQueue.filter((uid) =>
+        isCardCompletedToday(uid, facts.latestByUid, cardSet.lblMeta, todayEnd)
+      ).length,
+    [filteredQueue, facts.latestByUid, cardSet.lblMeta, todayEnd]
+  );
+
   const filteredQueueRef = React.useRef(filteredQueue);
   filteredQueueRef.current = filteredQueue;
 
-  const repositionRequestedRef = React.useRef<'reset' | 'next' | false>('reset');
-  const [repositionVersion, setRepositionVersion] = React.useState(0);
+  const viewStateRef = React.useRef(viewState);
+  viewStateRef.current = viewState;
+
+  const [pendingReposition, setPendingReposition] = React.useState<'reset' | 'next' | null>(
+    'reset'
+  );
 
   const [prevTag, setPrevTag] = React.useState(selectedTag);
   if (selectedTag !== prevTag) {
     setPrevTag(selectedTag);
-    repositionRequestedRef.current = 'reset';
+    setPendingReposition('reset');
   }
 
   const [prevDate, setPrevDate] = React.useState(today);
   if (today !== prevDate) {
     setPrevDate(today);
-    repositionRequestedRef.current = 'reset';
+    setPendingReposition('reset');
   }
 
-  const viewStateRef = React.useRef(viewState);
-  viewStateRef.current = viewState;
-
   const resetToFirstUnpracticed = React.useCallback(() => {
-    repositionRequestedRef.current = 'reset';
-    setRepositionVersion((v) => v + 1);
+    setPendingReposition('reset');
   }, []);
 
   const navigateToNextUnpracticed = React.useCallback(() => {
-    repositionRequestedRef.current = 'next';
-    setRepositionVersion((v) => v + 1);
+    setPendingReposition('next');
   }, []);
 
   React.useEffect(() => {
-    if (!repositionRequestedRef.current) return;
+    if (pendingReposition === null) return;
     if (filteredQueue.length === 0) return;
 
-    const mode = repositionRequestedRef.current;
-    repositionRequestedRef.current = false;
-
     let targetIndex: number;
-    if (mode === 'next') {
+    if (pendingReposition === 'next') {
       const startIndex = viewStateRef.current.currentIndex + 1;
       const nextIndex = filteredQueue.findIndex(
-        (uid, index) => index >= startIndex && !completedUids.has(uid)
+        (uid, index) =>
+          index >= startIndex &&
+          !isCardCompletedToday(uid, facts.latestByUid, cardSet.lblMeta, todayEnd)
       );
       targetIndex = nextIndex >= 0 ? nextIndex : filteredQueue.length;
     } else {
-      const firstUnpracticedIndex = filteredQueue.findIndex((uid) => !completedUids.has(uid));
+      const firstUnpracticedIndex = filteredQueue.findIndex(
+        (uid) => !isCardCompletedToday(uid, facts.latestByUid, cardSet.lblMeta, todayEnd)
+      );
       targetIndex = firstUnpracticedIndex >= 0 ? firstUnpracticedIndex : filteredQueue.length;
     }
 
+    setPendingReposition(null);
     setViewState({
       currentIndex: targetIndex,
       focusedChildUid: undefined,
       maxVisitedChildIndex: 0,
     });
-  }, [repositionVersion, filteredQueue, completedUids]);
+  }, [pendingReposition, filteredQueue, facts.latestByUid, cardSet.lblMeta, todayEnd]);
 
   const currentCardRefUid =
     viewState.currentIndex >= 0 && viewState.currentIndex < filteredQueue.length
@@ -547,7 +534,7 @@ export const useReviewRuntime = ({
     facts,
     viewState,
     renderMode: tagCardSets[selectedTag]?.renderMode,
-    completedCount: completedUids.size,
+    completedCount,
     currentPrimaryEntryId,
     currentCardRefUid,
     currentIndex: viewState.currentIndex,
