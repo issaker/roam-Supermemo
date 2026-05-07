@@ -186,6 +186,24 @@ export const savePracticeData = async ({
     }
   }
 
+  // Bug fix: 首次练习时创建基线 session block，保存卡片原始身份属性
+  // 根因：撤销首次练习后，唯一 session 被物理删除，卡片变为 NewSession，
+  //   algorithm 回退到默认 PROGRESSIVE，LBL 子卡丢失原始 SM2 身份
+  // 方案：首次练习前先创建仅含 algorithm + interaction 的基线记录，
+  //   作为撤销时的回归点，确保卡片原始身份不丢失
+  if (dateBlocks.length === 0 && data.algorithm) {
+    const baselineBlockUid = await createChildBlock(
+      cardDataBlockUid,
+      `[[${dateCreatedRoamDateString}]] ⚪`,
+      0,
+      { open: false }
+    );
+    await createChildBlock(baselineBlockUid, `algorithm:: ${data.algorithm}`, -1);
+    if (data.interaction) {
+      await createChildBlock(baselineBlockUid, `interaction:: ${data.interaction}`, -1);
+    }
+  }
+
   const sessionBlockUid = await createChildBlock(cardDataBlockUid, sessionBlockTitle, 0, {
     open: false,
   });

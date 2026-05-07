@@ -515,11 +515,15 @@ export const useReviewRuntime = ({
           });
         }
 
+        // Bug fix: 子块不应写入 interaction
+        // 根因：onSelectAlgorithm 对子块调用时传入了父卡片的 interaction (LBL)，
+        //   导致子块 session 被写入 interaction:: LBL，而子块应始终为 NORMAL
+        // 方案：子块调用 updateReviewConfig 时不传 interaction
         await updateReviewConfig({
           refUid: targetUid,
           dataPageTitle,
           algorithm,
-          interaction,
+          ...(isChild ? {} : { interaction }),
         });
       } catch (err) {
         console.error('Memo: Failed to update review config', err);

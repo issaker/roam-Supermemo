@@ -308,6 +308,9 @@ const Footer = ({
             activeButtonKey={activeButtonKey}
             onPrevClick={onPrevClick}
             onNextClick={nextFn}
+            isLineByLine={isLineByLine}
+            onLineByLinePrev={onLineByLinePrev}
+            onLineByLineNext={onLineByLineNext}
           />
         ) : (
           <GradingControlsWrapper
@@ -332,6 +335,9 @@ const AnswerHiddenControls = ({
   activeButtonKey,
   onPrevClick,
   onNextClick,
+  isLineByLine,
+  onLineByLinePrev,
+  onLineByLineNext,
 }) => (
   <div className="flex items-center justify-evenly w-full">
     <NavButton
@@ -346,6 +352,20 @@ const AnswerHiddenControls = ({
     >
       ◀
     </NavButton>
+    {isLineByLine && (
+      <NavButton
+        type="button"
+        aria-label="Previous Line"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onLineByLinePrev?.();
+        }}
+        className="bp3-button bp3-minimal"
+      >
+        ▲
+      </NavButton>
+    )}
     <ControlButton
       className="text-base font-medium py-1"
       intent="none"
@@ -360,6 +380,20 @@ const AnswerHiddenControls = ({
         <ButtonTags>SPACE</ButtonTags>
       </span>
     </ControlButton>
+    {isLineByLine && (
+      <NavButton
+        type="button"
+        aria-label="Next Line"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onLineByLineNext?.();
+        }}
+        className="bp3-button bp3-minimal"
+      >
+        ▼
+      </NavButton>
+    )}
     <NavButton
       type="button"
       aria-label="Next"

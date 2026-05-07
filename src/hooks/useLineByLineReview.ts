@@ -126,11 +126,6 @@ export default function useLineByLineReview({
 
   const needsPositioningRef = React.useRef(true);
 
-  // 跟踪上一个子行 uid，用于区分初始加载和评分后行切换：
-  // 初始加载时 prevChildUid 为 undefined，不自动展示答案；
-  // 评分后行切换时 prevChildUid 有值，自动展示答案使导航按钮可见。
-  const prevChildUidRef = React.useRef<string | undefined>(undefined);
-
   React.useEffect(() => {
     if (!isLBLReviewMode || !childUidsList.length) {
       setLineByLineRevealedCount(0);
@@ -171,7 +166,6 @@ export default function useLineByLineReview({
 
     if (!currentChildUid) {
       if (focusedChildUid) setFocusedChildUid(undefined);
-      prevChildUidRef.current = currentChildUid;
       return;
     }
 
@@ -180,12 +174,6 @@ export default function useLineByLineReview({
     }
     setMaxVisitedChildIndex(lineByLineCurrentChildIndex);
     setLineByLineRevealedCount((prev) => Math.max(prev, lineByLineCurrentChildIndex + 1));
-
-    // 评分后行切换：自动展示答案，使导航按钮(◀▶)可见
-    if (prevChildUidRef.current && prevChildUidRef.current !== currentChildUid) {
-      setShowAnswers(true);
-    }
-    prevChildUidRef.current = currentChildUid;
   }, [
     isLBLReviewMode,
     currentChildUid,
@@ -193,7 +181,6 @@ export default function useLineByLineReview({
     lineByLineCurrentChildIndex,
     setFocusedChildUid,
     setMaxVisitedChildIndex,
-    setShowAnswers,
   ]);
 
   const onLineByLineGrade = React.useCallback(
