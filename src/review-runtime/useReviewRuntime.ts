@@ -163,7 +163,9 @@ export const useReviewRuntime = ({
 
     let targetIndex: number;
     if (pendingReposition === 'next') {
-      const startIndex = viewStateRef.current.currentIndex + 1;
+      // Bug fix: forgot 后卡片被 reinsert 到后方，currentIndex 位置已是新卡片
+      // 用 +0 作为查询起点，让 isCardCompletedToday 过滤已练习卡片，避免跳过当前位置的卡片
+      const startIndex = viewStateRef.current.currentIndex;
       const nextIndex = filteredQueue.findIndex(
         (uid, index) =>
           index >= startIndex &&
@@ -373,11 +375,14 @@ export const useReviewRuntime = ({
 
       if (!isCramming) {
         setPendingState(targetUid, 'saving');
+        // Bug fix: 评分后 isNew 必须清除，否则 classifyCard 仍判定为 'new'，
+        // 导致 isCardCompletedToday 返回 false，navigateToNextUnpracticed 原地踏步
         if (isChild) {
           upsertLatestSessions({
             [targetUid]: {
               ...(childSessionData![targetUid] || generateNewSession({ algorithm })),
               ...practiceResult,
+              isNew: false,
               dateCreated: now,
             } as Session,
             [parentUid!]: updatedParentSession!,
@@ -388,6 +393,7 @@ export const useReviewRuntime = ({
             [targetUid]: {
               ...baseData,
               ...practiceResult,
+              isNew: false,
               dateCreated: now,
             } as Session,
           });
