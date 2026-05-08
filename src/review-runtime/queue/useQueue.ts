@@ -2,6 +2,8 @@ import * as React from 'react';
 import { RecordUid } from '~/models/session';
 import { CardSet } from './types';
 
+const STORAGE_PREFIX = 'roam-memo:queue:';
+
 const buildInitialUids = (cardSet: CardSet): RecordUid[] => {
   const seen = new Set<RecordUid>();
   const uids: RecordUid[] = [];
@@ -14,6 +16,49 @@ const buildInitialUids = (cardSet: CardSet): RecordUid[] => {
   cardSet.due.forEach(add);
   cardSet.new.forEach(add);
   return uids;
+};
+
+type PersistedQueue = {
+  uids: RecordUid[];
+  removedUids: RecordUid[];
+};
+
+const loadPersistedQueue = (queueId: string): PersistedQueue | null => {
+  try {
+    const raw = localStorage.getItem(STORAGE_PREFIX + queueId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.uids)) return null;
+    return {
+      uids: parsed.uids,
+      removedUids: Array.isArray(parsed.removedUids) ? parsed.removedUids : [],
+    };
+  } catch {
+    return null;
+  }
+};
+
+const savePersistedQueue = (queueId: string, uids: RecordUid[], removedUids: RecordUid[]) => {
+  try {
+    localStorage.setItem(STORAGE_PREFIX + queueId, JSON.stringify({ uids, removedUids }));
+  } catch (e) {
+    console.warn('Memo: Failed to persist queue state', e);
+  }
+};
+
+const cleanStaleQueueKeys = (currentQueueId: string) => {
+  try {
+    const todayPrefix = currentQueueId.slice(0, 10);
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(STORAGE_PREFIX)) continue;
+      if (!key.includes(todayPrefix)) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch (e) {
+    console.warn('Memo: Failed to clean stale queue keys', e);
+  }
 };
 
 const findDeletedUids = async (uids: string[]): Promise<string[]> => {
@@ -57,15 +102,25 @@ type QueueState = {
  */
 
 export const useQueue = (cardSet: CardSet | null, queueId: string, _tag: string) => {
-  const [stateMap, setStateMap] = React.useState<Map<string, QueueState>>(new Map());
-  const [removedUidsMap, setRemovedUidsMap] = React.useState<Map<string, Set<RecordUid>>>(
-    new Map()
-  );
+  const [stateMap, setStateMap] = React.useState<Map<string, QueueState>>(() => {
+    const persisted = loadPersistedQueue(queueId);
+    if (persisted) {
+      return new Map([[queueId, { uids: persisted.uids }]]);
+    }
+    return new Map();
+  });
+  const [removedUidsMap, setRemovedUidsMap] = React.useState<Map<string, Set<RecordUid>>>(() => {
+    const persisted = loadPersistedQueue(queueId);
+    if (persisted && persisted.removedUids.length > 0) {
+      return new Map([[queueId, new Set(persisted.removedUids)]]);
+    }
+    return new Map();
+  });
 
   const hasCards =
     cardSet && cardSet.due.length + cardSet.new.length + cardSet.completed.length > 0;
 
-  // 懒初始化：仅在 stateMap 中尚不存在该 queueId 且 cardSet 非空时创建
+  // 懒初始化：localStorage 无缓存且 cardSet 非空时，从 cardSet 构建
   if (!stateMap.has(queueId) && hasCards) {
     const initialUids = buildInitialUids(cardSet!);
     setStateMap((prev) => {
@@ -74,6 +129,11 @@ export const useQueue = (cardSet: CardSet | null, queueId: string, _tag: string)
       return next;
     });
   }
+
+  // 首次挂载时清理非当日的旧缓存
+  React.useEffect(() => {
+    cleanStaleQueueKeys(queueId);
+  }, [queueId]);
 
   // 日内新增：cardSet 中出现的新 uid 追加到快照末尾
   React.useEffect(() => {
@@ -175,6 +235,14 @@ export const useQueue = (cardSet: CardSet | null, queueId: string, _tag: string)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueId, stateMap]);
+
+  // 持久化：stateMap / removedUidsMap 变更时自动写入 localStorage
+  React.useEffect(() => {
+    const state = stateMap.get(queueId);
+    if (!state) return;
+    const removed = removedUidsMap.get(queueId);
+    savePersistedQueue(queueId, state.uids, removed ? Array.from(removed) : []);
+  }, [queueId, stateMap, removedUidsMap]);
 
   const removedUids = React.useMemo(() => {
     return removedUidsMap.get(queueId) ?? new Set<RecordUid>();
