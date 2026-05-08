@@ -84,8 +84,7 @@ export default function useCurrentCardData({
         effectiveOptimisticMeta?.interaction ??
         derivedCardMeta?.interaction ??
         DEFAULT_REVIEW_CONFIG.interaction,
-      nextDueDate:
-        effectiveOptimisticMeta?.nextDueDate ?? derivedCardMeta?.nextDueDate,
+      nextDueDate: effectiveOptimisticMeta?.nextDueDate ?? derivedCardMeta?.nextDueDate,
     };
   }, [derivedCardMeta, effectiveOptimisticMeta]);
 
@@ -104,10 +103,8 @@ export default function useCurrentCardData({
   const applyOptimisticCardMeta = React.useCallback(
     (newMeta: CardMeta) => {
       if (!currentCardRefUid) return;
-      const resolvedAlgorithm =
-        newMeta.algorithm ?? DEFAULT_REVIEW_CONFIG.algorithm;
-      const resolvedInteraction =
-        newMeta.interaction ?? DEFAULT_REVIEW_CONFIG.interaction;
+      const resolvedAlgorithm = newMeta.algorithm ?? DEFAULT_REVIEW_CONFIG.algorithm;
+      const resolvedInteraction = newMeta.interaction ?? DEFAULT_REVIEW_CONFIG.interaction;
       setOptimisticCardMeta({
         meta: { ...newMeta, algorithm: resolvedAlgorithm, interaction: resolvedInteraction },
         uid: currentCardRefUid,

@@ -20,6 +20,11 @@ import * as queries from '~/queries/save';
 import * as practice from '~/practice';
 
 export const mockQueryResult = ({ queryMocks, settingsMock, tagsList }) => {
+  // 测试隔离：清除之前测试残留的 localStorage 持久化数据
+  // 根因：useQueue 的 localStorage 持久化会在测试间泄漏，导致
+  // cardSet 不同的测试读取到旧测试的队列状态，显示错误的卡片
+  localStorage.clear();
+
   const mockRoamAlphaAPI = generateMockRoamAlphaAPI({ queryMocks, tagsList });
 
   Object.defineProperty(window, 'roamAlphaAPI', {
