@@ -27,7 +27,7 @@ describe('parseDeckConfigs', () => {
   });
 
   it('uses custom fallback', () => {
-    const fallback = [{ name: 'default', swapQA: false, weight: 1 }];
+    const fallback = [{ name: 'default', swapQA: false, weight: 1, blacklist: false }];
     expect(parseDeckConfigs(undefined, fallback)).toEqual(fallback);
   });
 });

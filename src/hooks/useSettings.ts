@@ -31,7 +31,7 @@
 import React from 'react';
 import { loadSettingsFromPage, saveSettingsToPage } from '~/queries/settings';
 
-export type DeckConfig = { name: string; swapQA: boolean; weight: number };
+export type DeckConfig = { name: string; swapQA: boolean; weight: number; blacklist: boolean };
 
 export type Settings = {
   deckConfigs: string;
@@ -49,7 +49,7 @@ export type Settings = {
 
 export const defaultSettings: Settings = {
   deckConfigs:
-    '[{"name":"memo","swapQA":false,"weight":50},{"name":"DailyNote","swapQA":false,"weight":50}]',
+    '[{"name":"memo","swapQA":false,"weight":50,"blacklist":false},{"name":"DailyNote","swapQA":false,"weight":50,"blacklist":false}]',
   dataPageTitle: 'roam/Supermemo',
   dailyLimit: 0,
   historyCleanupKeepCount: 3,

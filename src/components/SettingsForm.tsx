@@ -169,7 +169,7 @@ const SettingsForm = React.forwardRef<SettingsFormHandle, SettingsFormProps>(
                     if (!hasDailyNote) {
                       updatedConfigs = [
                         ...updatedConfigs,
-                        { name: 'DailyNote', swapQA: false, weight: 0 },
+                        { name: 'DailyNote', swapQA: false, weight: 0, blacklist: false },
                       ];
                       const weights = equalizeWeights(updatedConfigs.length);
                       updatedConfigs = updatedConfigs.map((d, i) => ({ ...d, weight: weights[i] }));

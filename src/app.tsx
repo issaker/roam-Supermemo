@@ -11,7 +11,7 @@ import useOnBlockInteract from '~/hooks/useOnBlockInteract';
 import useCommandPaletteAction from '~/hooks/useCommandPaletteAction';
 import useCachedData from '~/hooks/useCachedData';
 import useOnVisibilityStateChange from '~/hooks/useOnVisibilityStateChange';
-import { allocateDailyCards } from '~/queries/dataProcessing';
+import { allocateDailyCards, filterBlacklistedDecks } from '~/queries/dataProcessing';
 
 const App = () => {
   const [showPracticeOverlay, setShowPracticeOverlay] = React.useState(false);
@@ -32,10 +32,22 @@ const App = () => {
     deckConfigs,
   });
 
+  const blacklistedTagCardSets = React.useMemo(() => {
+    if (!Object.keys(tagCardSets).length) return tagCardSets;
+    return filterBlacklistedDecks({ tagCardSets, deckConfigs });
+  }, [tagCardSets, deckConfigs]);
+
   const filteredTagCardSets = React.useMemo(() => {
-    if (!dailyLimit || isCramming || !Object.keys(tagCardSets).length) return tagCardSets;
-    return allocateDailyCards({ tagCardSets, dailyLimit, tagsList, isCramming, deckConfigs });
-  }, [tagCardSets, dailyLimit, tagsList, isCramming, deckConfigs]);
+    if (!dailyLimit || isCramming || !Object.keys(blacklistedTagCardSets).length)
+      return blacklistedTagCardSets;
+    return allocateDailyCards({
+      tagCardSets: blacklistedTagCardSets,
+      dailyLimit,
+      tagsList,
+      isCramming,
+      deckConfigs,
+    });
+  }, [blacklistedTagCardSets, dailyLimit, tagsList, isCramming, deckConfigs]);
 
   const refreshData = React.useCallback(() => {
     fetchCacheData();

@@ -2,7 +2,7 @@ import { getStringBetween, parseConfigString, parseRoamDateString } from '~/util
 import * as stringUtils from '~/utils/string';
 import * as dateUtils from '~/utils/date';
 import { resolveReviewConfig } from '~/models/session';
-import { TagCardSets } from '~/models/practice';
+import { TagCardSets, RenderMode } from '~/models/practice';
 import { generateNewSession } from './utils';
 import { parseDeckConfigs } from '~/utils/deckConfig';
 
@@ -188,6 +188,49 @@ const parseLatestSession = (sessionChildren: any[], uid: string) => {
 };
 
 // Counts are no longer stored as separate fields — derived from .length of uid arrays.
+
+// 黑名单牌组过滤：被勾选 blacklist 的牌组，其所有卡片从所有牌组队列中移除
+// 位置：classifyAllCards 之后、allocateDailyCards 之前
+// 效果：被过滤的卡片不占 Daily Review Limit 配额
+export const filterBlacklistedDecks = ({
+  tagCardSets,
+  deckConfigs,
+}: {
+  tagCardSets: TagCardSets;
+  deckConfigs: string;
+}): TagCardSets => {
+  const parsedDeckConfigs = parseDeckConfigs(deckConfigs);
+  const blacklistedDecks = parsedDeckConfigs.filter((c) => c.blacklist);
+  if (!blacklistedDecks.length) return tagCardSets;
+
+  const blacklistedUids = new Set<string>();
+  for (const deck of blacklistedDecks) {
+    const tagData = tagCardSets[deck.name];
+    if (!tagData) continue;
+    for (const uid of tagData.dueUids) blacklistedUids.add(uid);
+    for (const uid of tagData.newUids) blacklistedUids.add(uid);
+    for (const uid of tagData.completedUids) blacklistedUids.add(uid);
+  }
+
+  if (!blacklistedUids.size) return tagCardSets;
+
+  const result: TagCardSets = {};
+  for (const [tag, tagData] of Object.entries(tagCardSets)) {
+    const isBlacklisted = blacklistedDecks.some((d) => d.name === tag);
+    if (isBlacklisted) {
+      result[tag] = { ...tagData, dueUids: [], newUids: [], completedUids: [] };
+    } else {
+      result[tag] = {
+        ...tagData,
+        dueUids: tagData.dueUids.filter((uid) => !blacklistedUids.has(uid)),
+        newUids: tagData.newUids.filter((uid) => !blacklistedUids.has(uid)),
+        completedUids: tagData.completedUids.filter((uid) => !blacklistedUids.has(uid)),
+      };
+    }
+  }
+  return result;
+};
+
 export const allocateDailyCards = ({
   tagCardSets,
   dailyLimit,
@@ -203,13 +246,31 @@ export const allocateDailyCards = ({
 }): TagCardSets => {
   const parsedDeckConfigs = parseDeckConfigs(deckConfigs);
   const weightMap: Record<string, number> = {};
-  for (const config of parsedDeckConfigs) weightMap[config.name] = config.weight;
+  const blacklistSet = new Set<string>();
+  for (const config of parsedDeckConfigs) {
+    weightMap[config.name] = config.weight;
+    if (config.blacklist) blacklistSet.add(config.name);
+  }
 
   const result: TagCardSets = { ...tagCardSets };
 
-  // 权重归零的牌组完全排除：due、new、completed 均清空
+  // 兜底：deckConfigs 可能先于 tagCardSets 更新（异步 fetch），tagsList 中的新牌组尚未在 tagCardSets 中出现。
+  // 为其填充默认空条目，避免下游 result[tag] 为 undefined 导致崩溃。
   for (const tag of tagsList) {
-    if (tag in weightMap && weightMap[tag] === 0) {
+    if (!result[tag]) {
+      result[tag] = {
+        dueUids: [],
+        newUids: [],
+        completedUids: [],
+        lblDeckMeta: {},
+        renderMode: RenderMode.Normal,
+      };
+    }
+  }
+
+  // 权重归零或黑名单的牌组完全排除：due、new、completed 均清空
+  for (const tag of tagsList) {
+    if ((tag in weightMap && weightMap[tag] === 0) || blacklistSet.has(tag)) {
       result[tag] = {
         ...result[tag],
         dueUids: [],
@@ -219,7 +280,9 @@ export const allocateDailyCards = ({
     }
   }
 
-  const enabledTags = tagsList.filter((tag) => !(tag in weightMap) || weightMap[tag] > 0);
+  const enabledTags = tagsList.filter(
+    (tag) => !blacklistSet.has(tag) && (!(tag in weightMap) || weightMap[tag] > 0)
+  );
   const totalDueAvailable = enabledTags.reduce((sum, tag) => sum + result[tag].dueUids.length, 0);
   const totalNewAvailable = enabledTags.reduce((sum, tag) => sum + result[tag].newUids.length, 0);
   const totalRemaining = totalDueAvailable + totalNewAvailable;

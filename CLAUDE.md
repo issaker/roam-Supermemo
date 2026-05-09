@@ -45,7 +45,7 @@ useCardBlock(refUid, session)
 
 ## Inviolable Rules
 
-1. **Queue is snapshot + reinsert + mask.** `state.uids` is the single source of truth for ordering — built once per session and never recomputed. Insertion changes go through `reinsert(uid, afterUid, offset)` which directly modifies the snapshot. Display filtering (quota mask `cardSet` + blacklist mask `removedUids`) is a pure read layer that never modifies the snapshot.
+1. **Queue is snapshot + reinsert + mask.** `state.uids` is the single source of truth for ordering — built once per session and never recomputed. Insertion changes go through `reinsert(uid, afterUid, offset)` which directly modifies the snapshot. Display filtering (quota mask `cardSet` + blacklist mask `removedUids`) is a pure read layer that never modifies the snapshot. The snapshot and `removedUids` are persisted to `localStorage` (key: `roam-memo:queue:{queueId}`) so page refreshes resume the session; stale entries from other days are auto-cleaned on mount.
 2. **No separate code paths for normal vs LBL in card interaction.** `useCardBlock` is the single card pipeline. `reviewUnit` is the single grading action.
 3. **Card algorithm from the card's OWN session.** When a card has its own session, its algorithm comes from that session (not a parent). For new cards without a session, `useCardBlock` accepts a `fallbackAlgorithm` parameter (LBL children pass the parent's algorithm; normal cards use `DEFAULT_REVIEW_CONFIG.algorithm`).
 4. **Unified card classification.** `classifyCard` is the single entry point for both Normal and LBL cards. LBL cards are classified from children's collective state via `classifyLblDeck`; Normal cards from their own session.
@@ -55,11 +55,14 @@ useCardBlock(refUid, session)
 | Path | Role |
 |------|------|
 | `src/hooks/useCardBlock.ts` | Single card pipeline: block info, cloze guard, showAnswers. |
-| `src/review-runtime/useReviewRuntime.ts` | Unified hook: `SessionFacts` + `ReviewViewState` + inline actions (`reviewUnit`, `updateReviewConfigAction`). Uses `useQueue` for session-stable queue management. |
+| `src/review-runtime/useReviewRuntime.ts` | Coordinator hook: composes `useSessionFacts` + `useReviewOperation` + `useQueue`. Manages `viewState`, navigation, and repositioning. Delegates facts management and review operations to sub-hooks. |
+| `src/review-runtime/useSessionFacts.ts` | Facts state management: `SessionFacts` (latestByUid + pendingByUid), `upsertLatestSessions`, `setPendingState`, `ensureLatestSessions`. Merges external data respecting pending guards. |
+| `src/review-runtime/useReviewOperation.ts` | Review operations: `reviewUnit` (grade + optimistic update + async save + queue reinsert + navigation) and `updateReviewConfigAction` (algorithm/interaction change). Receives queue and navigation ops via dependency injection. |
+| `src/review-runtime/reviewLogic.ts` | Pure business logic: `omitIsNew`, `mergeSourceIntoFacts`, `isCardCompletedToday`, `calculateChildReview`, `calculateNormalReview`, `resolveNextLblNavigation`. Testable without React. |
 | `src/review-runtime/selectors.ts` | Pure derivation: `deriveChildSessionMap`. |
 | `src/review-runtime/types.ts` | `SessionFacts`, `ReviewViewState`. |
 | `src/review-runtime/queue/types.ts` | `CardSet` type (due/new/completed UID arrays + lblMeta). |
-| `src/review-runtime/queue/useQueue.ts` | Hook: manages `state.uids` snapshot + `reinsert` insertion layer + quota/blacklist mask filtering. Session-stable — snapshot built once per session. |
+| `src/review-runtime/queue/useQueue.ts` | Hook: manages `state.uids` snapshot + `reinsert` insertion layer + quota/blacklist mask filtering. Session-stable — snapshot built once per session. Persists snapshot + removedUids to localStorage for refresh resilience. |
 | `src/hooks/useLineByLineReview.ts` | LBL Y-axis: child positioning, progressive reveal. Uses `deriveLblSubQueue`. Grading delegated to `reviewUnit`. |
 | `src/hooks/useCurrentCardData.tsx` | `currentCardData = latestSession` (alias). Optimistic `cardMeta` overlay with uid guard. |
 | `src/hooks/usePracticeData.tsx` | Practice data fetch from Roam. No freezing — queue stability is handled by `useQueue`. |
@@ -67,7 +70,7 @@ useCardBlock(refUid, session)
 | `src/models/session.ts` | Session model, `SchedulingAlgorithm`, `InteractionStyle`, `classifyCard` (unified Normal + LBL classification). |
 | `src/models/practice.ts` | Queue strategies: `sortNormalDueCardUids` (urgency), `deriveLblSubQueue` (single LBL sub-queue derivation point). |
 | `src/queries/data.ts` | Roam page read/write, session parsing (`parseLatestSession`, `mergeSessionSnapshot`), `allocateDailyCards`. |
-| `src/queries/save.ts` | Writing sessions to Roam: `savePracticeData`, `updateParentNextDueDate`, `updateReviewConfig`, `undoCardSession` |
+| `src/queries/save.ts` | Writing sessions to Roam: `savePracticeData` (with baseline session creation on first practice), `updateParentNextDueDate`, `updateReviewConfig`, `undoCardSession` |
 | `src/queries/today.ts` | Due/new/completed calculation pipeline. All card types classified via `classifyCard`. |
 | `src/queries/dataProcessing.ts` | Session parsing, `allocateDailyCards` (proportional daily limit allocation). |
 | `src/practice.ts` | Pure scheduling math: SM2 (`supermemo`), Progressive (`progressiveInterval`), Fixed Time. |
@@ -83,10 +86,11 @@ App (root)
 └── PracticeSessionProvider (context values)
     └── PracticeOverlay
         ├── useReviewRuntime(practiceData, today, selectedTag, ...)
-        │     → facts (SessionFacts), viewState (ReviewViewState)
-        │     → useQueue(cardSet, sessionId, tag) → effectiveQueue, patches
-        │     → deckSnapshot, focusedPrimary (derived from facts + viewState)
-        │     → reviewUnit, updateReviewConfigAction
+        │     ├── useSessionFacts → facts (SessionFacts)
+        │     ├── useReviewOperation → reviewUnit, updateReviewConfigAction
+        │     ├── useQueue(cardSet, sessionId, tag) → effectiveQueue, patches
+        │     ├── viewState (ReviewViewState), navigation callbacks
+        │     └── deckSnapshot, focusedPrimary (derived from facts + viewState)
         ├── useCurrentCardData → cardMeta, algorithm, interaction
         ├── useCardBlock(activeUid, activeSession) → showAnswers, algorithm
         ├── useLineByLineReview → line-by-line navigation + grading
@@ -109,6 +113,7 @@ App (root)
 roam/Supermemo (page)
 ├── data (heading 3)
 │   └── ((cardUid))
+│       ├── [[Date]] ⚪  ← baseline session (algorithm + interaction only, created on first practice)
 │       ├── [[Date]] 🟢  ← latest session = SINGLE SOURCE OF TRUTH
 │       │   ├── algorithm:: SM2
 │       │   ├── interaction:: NORMAL
@@ -143,9 +148,13 @@ Do NOT remove `library.export: 'default'` from standalone config — Roam loads 
 
 **Reinsert (Forgot / LBL-Next):** `queueReinsert(uid, afterUid, offset)` directly modifies the `state.uids` snapshot. It removes the uid from its current position and re-inserts it `offset` positions after `afterUid`. This works on the snapshot layer, before display masks are applied. No separate patch type — reinsertion is a direct state mutation.
 
+**Navigation after Forgot reinsert:** After reinsert, the card at `currentIndex` is already the next unreviewed card. `startIndex = currentIndex` (not `+1`) so `isCardCompletedToday` filtering correctly finds the next incomplete card without skipping.
+
+**Optimistic updates must strip `isNew`:** `NewSession.isNew` leaks through spread into optimistic updates, causing `classifyCard` to still return `'new'` after practice. Always use `omitIsNew(data)` before merging `practiceResult` into `upsertLatestSessions`.
+
 **Optimistic updates:** `reviewUnit` does optimistic facts update → setShowAnswers reset → focus advance → async save to Roam. `updateReviewConfigAction` optimistically updates `facts.latestByUid` and `cardMeta` before the async Roam write.
 
-**LBL Progressive Reveal:** `lineByLineRevealedCount` is local view-state (not mirrored). Moving down reveals one more line; moving up hides all lines below current.
+**LBL Progressive Reveal:** `lineByLineRevealedCount` is local view-state (not mirrored). Moving down reveals one more line; moving up hides all lines below current. ▲/▼ navigation buttons are available in answer-hidden state for LBL cards.
 
 **Child algorithm:** `getSessionAlgorithm(childSession, fallbackAlgorithm)` — uses the child's own session algorithm if present; otherwise falls back to the provided fallback. LBL children pass the parent's algorithm as fallback; normal cards use `DEFAULT_REVIEW_CONFIG.algorithm`.
 
@@ -157,5 +166,8 @@ Do NOT remove `library.export: 'default'` from standalone config — Roam loads 
 - **`resolveBaseForCalculation`** must be called before scheduling math on same-day re-reviews, or intervals inflate.
 - **`hasCloze` is derived from block data** (children or `{...}` in text), not from DOM. Do not add a useState + useEffect for it — the `init=true` pattern was replaced with pure derivation.
 - **`setShowAnswers(false)` MUST precede `currentIndex` advance** in `reviewUnit`. Reordering them causes the wrong card's showAnswers override to be reset when keyboard shortcuts fire grading (Blueprint's global event listeners are outside React's batch context), breaking showAnswers for reinserted Forgot cards.
+- **Child blocks must NOT receive `interaction:: LBL`.** When `onSelectAlgorithm` fires for a child block, do NOT pass the parent's `interaction` — children are always NORMAL. The `updateReviewConfig` call for children omits `interaction` to prevent this leak.
+- **Baseline session on first practice.** `savePracticeData` creates a ⚪ baseline block (algorithm + interaction only) before the first real session. Without it, undoing first practice physically deletes the only session, causing the card to revert to `NewSession` with default PROGRESSIVE algorithm — losing its original identity.
+- **`isNew` leaks through spread.** `NewSession` has an `isNew: true` field. When spread into optimistic updates, `practiceResult` (type `Session`) doesn't contain `isNew` so it can't override it. Always `omitIsNew()` before merging.
 - **Standalone output:** The `standalone.js` bundle also gets the `@blueprintjs` externals — ensure CDN script tags include Blueprint for roam/js users.
 - **React 17:** Project uses React 17 + Blueprint 3.x. Do not upgrade without verifying `@blueprintjs/select` v3 compatibility.

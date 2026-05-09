@@ -23,7 +23,8 @@ const StyledTable = styled.table`
   border-collapse: collapse;
   font-size: 13px;
 
-  th, td {
+  th,
+  td {
     border: 1px solid ${colors.borderSubtle};
     padding: 4px 8px;
     text-align: left;
@@ -82,7 +83,7 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
   };
 
   const handleAddRow = () => {
-    const newDeck: DeckConfig = { name: '', swapQA: false, weight: 0 };
+    const newDeck: DeckConfig = { name: '', swapQA: false, weight: 0, blacklist: false };
     const newDecks = [...decks, newDeck];
     const weights = equalizeWeights(newDecks.length);
     const updated = newDecks.map((d, i) => ({ ...d, weight: weights[i] }));
@@ -105,7 +106,10 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
   const handleMoveUp = () => {
     if (selectedIndex === null || selectedIndex === 0) return;
     const updated = [...decks];
-    [updated[selectedIndex - 1], updated[selectedIndex]] = [updated[selectedIndex], updated[selectedIndex - 1]];
+    [updated[selectedIndex - 1], updated[selectedIndex]] = [
+      updated[selectedIndex],
+      updated[selectedIndex - 1],
+    ];
     setSelectedIndex(selectedIndex - 1);
     emitChange(updated);
   };
@@ -113,7 +117,10 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
   const handleMoveDown = () => {
     if (selectedIndex === null || selectedIndex === decks.length - 1) return;
     const updated = [...decks];
-    [updated[selectedIndex], updated[selectedIndex + 1]] = [updated[selectedIndex + 1], updated[selectedIndex]];
+    [updated[selectedIndex], updated[selectedIndex + 1]] = [
+      updated[selectedIndex + 1],
+      updated[selectedIndex],
+    ];
     setSelectedIndex(selectedIndex + 1);
     emitChange(updated);
   };
@@ -126,6 +133,11 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
 
   const handleSwapQAChange = (index: number, checked: boolean) => {
     const updated = decks.map((d, i) => (i === index ? { ...d, swapQA: checked } : d));
+    emitChange(updated);
+  };
+
+  const handleBlacklistChange = (index: number, checked: boolean) => {
+    const updated = decks.map((d, i) => (i === index ? { ...d, blacklist: checked } : d));
     emitChange(updated);
   };
 
@@ -152,8 +164,13 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
       <StyledTable>
         <thead>
           <tr>
-            <th style={{ width: '50%' }}>Deck Name</th>
-            <th style={{ width: '20%', textAlign: 'center' }}>Swap Q/A</th>
+            <th style={{ width: '40%' }}>Deck Name</th>
+            <th style={{ width: '15%', textAlign: 'center' }}>Swap Q/A</th>
+            <th style={{ width: '15%', textAlign: 'center' }}>
+              Black
+              <br />
+              List
+            </th>
             <th style={{ width: '30%', textAlign: 'center' }}>Weight %</th>
           </tr>
         </thead>
@@ -162,7 +179,7 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
             const isSelected = selectedIndex === index;
             const isNewName = editingNewName === index;
             const isDN = isDailyNote(deck.name);
-            const RowComponent = isSelected ? SelectedRow : (isDN ? DailyNoteRow : 'tr');
+            const RowComponent = isSelected ? SelectedRow : isDN ? DailyNoteRow : 'tr';
 
             return (
               <RowComponent
@@ -195,6 +212,14 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
                   />
                 </td>
                 <td style={{ textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    className="bp3-checkbox"
+                    checked={deck.blacklist}
+                    onChange={(e) => handleBlacklistChange(index, e.target.checked)}
+                  />
+                </td>
+                <td style={{ textAlign: 'center' }}>
                   <WeightInput
                     className="bp3-input"
                     type="number"
@@ -216,7 +241,11 @@ const DeckConfigsTable: React.FC<DeckConfigsTableProps> = ({ deckConfigs, onChan
           icon="minus"
           small
           onClick={handleDeleteRow}
-          disabled={decks.length <= 1 || selectedIndex === null || (selectedIndex !== null && isDailyNote(decks[selectedIndex].name))}
+          disabled={
+            decks.length <= 1 ||
+            selectedIndex === null ||
+            (selectedIndex !== null && isDailyNote(decks[selectedIndex].name))
+          }
         />
         <Blueprint.Button
           icon="arrow-up"

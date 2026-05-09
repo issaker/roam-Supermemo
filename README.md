@@ -31,7 +31,7 @@ if (!window.roamSupermemoLoaded) {
 
 **Normal mode**: child blocks are hidden answers, revealed on "Show Answer".
 **Swap Q/A mode**: answers shown first, question hidden until "Show Answer".
-**Line-by-Line (LBL) mode**: child blocks revealed one at a time top-to-bottom.
+**Line-by-Line (LBL) mode**: child blocks revealed one at a time top-to-bottom. ▲/▼ buttons available even when answers are hidden.
 
 ### Shortcuts
 
@@ -92,7 +92,7 @@ Settings → Data Migration panel. Converts `reviewMode::` → `algorithm::` + `
 
 ## Architecture — First Principles
 
-The queue is an immutable snapshot, not a computation. Built once per session, modified by reinsert and filtered by display masks.
+The queue is an immutable snapshot, not a computation. Built once per session, modified by reinsert and filtered by display masks. Persisted to `localStorage` so page refreshes resume where you left off.
 
 ### Three-Layer Queue
 
@@ -135,7 +135,7 @@ Child blocks are the **real cards**. Each has its own independent `Session` with
 2. **LBL parent is a Mini-Deck, classified from children.** Only child blocks are real cards. The parent's `nextDueDate` is always derived from children at grading time. The pipeline classifies LBL decks from children's collective state (`classifyCard` → `classifyLblDeck`), never from the parent's `dateCreated`.
 3. **One kind of card rendering.** `activeCard = useCardBlock(activeUid, activeSession)`. Same hook, same pipeline.
 4. **One facts store, one view state.** `facts.latestByUid` holds every session. `viewState` holds position. Everything else is derived.
-5. **Queue is snapshot, not computation.** Built once per session (date + tag + settings), never recomputed. Insertion changes go through `reinsert` on the snapshot. Display filtering (quota mask + blacklist mask) is a pure read that never modifies the snapshot.
+5. **Queue is snapshot, not computation.** Built once per session (date + tag + settings), never recomputed. Insertion changes go through `reinsert` on the snapshot. Display filtering (quota mask + blacklist mask) is a pure read that never modifies the snapshot. The snapshot is persisted to `localStorage` (key: `roam-memo:queue:{queueId}`); stale entries from other days are auto-cleaned on mount.
 
 ### Runtime (`src/review-runtime/`)
 
@@ -143,9 +143,12 @@ Child blocks are the **real cards**. Each has its own independent `Session` with
 |--------|------|
 | `types.ts` | `SessionFacts`, `ViewState` |
 | `selectors.ts` | `deriveChildSessionMap` |
-| `useReviewRuntime.ts` | Unified hook: facts + view state + `reviewUnit` + `updateReviewConfigAction` |
+| `useReviewRuntime.ts` | Coordinator: composes `useSessionFacts` + `useReviewOperation` + `useQueue`. Manages `viewState`, navigation, and repositioning. |
+| `useSessionFacts.ts` | Facts state management: `SessionFacts`, `upsertLatestSessions`, `setPendingState`, `ensureLatestSessions`. |
+| `useReviewOperation.ts` | Review operations: `reviewUnit` + `updateReviewConfigAction`. Receives queue and navigation ops via dependency injection. |
+| `reviewLogic.ts` | Pure business logic: `omitIsNew`, `mergeSourceIntoFacts`, `isCardCompletedToday`, `calculateChildReview`, `calculateNormalReview`, `resolveNextLblNavigation`. |
 | `queue/types.ts` | `CardSet` type (due/new/completed UID arrays + lblMeta) |
-| `queue/useQueue.ts` | Hook: manages state.uids snapshot + reinsert insertion layer + quota/blacklist mask filtering |
+| `queue/useQueue.ts` | Hook: manages state.uids snapshot + reinsert insertion layer + quota/blacklist mask filtering. Persists snapshot to localStorage for refresh resilience. |
 
 ### Key Modules
 
@@ -170,6 +173,7 @@ All data on a Roam page (default `roam/Supermemo`). Single session-block archite
 roam/Supermemo
 └── data
     └── ((cardUid))
+        ├── [[Date]] ⚪  ← baseline session (algorithm + interaction only, created on first practice)
         ├── [[Date]] 🟢  ← latest session = SINGLE SOURCE OF TRUTH
         │   ├── algorithm:: SM2
         │   ├── interaction:: LBL
@@ -179,6 +183,7 @@ roam/Supermemo
 ```
 
 - Latest session block is the source of truth. `savePracticeData` always creates new blocks.
+- Baseline session (⚪): created on first practice with only `algorithm` + `interaction`. Serves as the rollback point when undoing first practice — ensures the card's original identity is preserved.
 - Field naming: `{owner}_{purpose}` (`sm2_*`, `progressive_*`, `fixed_*`).
 - Each algorithm writes only its own fields; switching never loses data.
 - LBL children have independent sessions; parent aggregates `nextDueDate`.
@@ -214,6 +219,10 @@ Every persistent review bug comes from state duplication. The snapshot + reinser
 
 `reinsert(uid, afterUid, offset)` directly modifies the `state.uids` array — it works on the full snapshot before any display filtering. This means reinserted cards respect their new position in the snapshot regardless of which cards are currently visible through masks. The mask layers (quota + blacklist) are always applied after reinsertion, as the final display step.
 
+### After Forgot reinsert, current index already holds the next card
+
+When a "Forgot" card is reinserted N positions later, the card at `currentIndex` is already the next unreviewed card. Navigation after reinsert uses `startIndex = currentIndex` (not `currentIndex + 1`) so `isCardCompletedToday` filtering correctly finds the next incomplete card without skipping.
+
 ### `resolveBaseForCalculation` — same-day re-scoring
 Prevents interval inflation (Good→Perfect stacking). Three rules: (1) non-same-day → use as-is, (2) same-day Forgot → use as-is, (3) same-day non-Forgot → rewind to `baseSessionData`.
 
@@ -236,7 +245,10 @@ src/
 ├── review-runtime/
 │   ├── types.ts             # SessionFacts, ViewState
 │   ├── selectors.ts         # deriveChildSessionMap
-│   ├── useReviewRuntime.ts  # Unified runtime hook
+│   ├── reviewLogic.ts       # Pure business logic (testable without React)
+│   ├── useSessionFacts.ts   # Facts state management hook
+│   ├── useReviewOperation.ts # Review operations hook (reviewUnit, updateReviewConfigAction)
+│   ├── useReviewRuntime.ts  # Coordinator hook (composes sub-hooks)
 │   └── queue/
 │       ├── types.ts         # CardSet type
 │       └── useQueue.ts      # Queue hook: snapshot + reinsert + mask
