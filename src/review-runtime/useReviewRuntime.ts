@@ -26,6 +26,16 @@ import { ReviewViewState, SessionFacts, LatestSessionRecord } from './types';
 import { CardSet } from './queue/types';
 import { useQueue } from './queue/useQueue';
 
+// Bug fix: New 卡片练习后 isNew: true 残留导致 classifyCard 仍返回 'new'
+// 根因：NewSession 的 isNew 字段通过展开运算符泄漏到乐观更新中，practiceResult (Session 类型) 不含 isNew 无法覆盖
+// 方案：乐观更新前剔除 isNew，确保练习后 classifyCard 正确判定为 'completed'
+const omitIsNew = (data: Session | undefined): Session => {
+  if (!data) return {} as Session;
+  const result = { ...data } as Session & { isNew?: boolean };
+  delete result.isNew;
+  return result;
+};
+
 const mergeSourceIntoFacts = ({
   currentFacts,
   incoming,
@@ -375,14 +385,11 @@ export const useReviewRuntime = ({
 
       if (!isCramming) {
         setPendingState(targetUid, 'saving');
-        // Bug fix: 评分后 isNew 必须清除，否则 classifyCard 仍判定为 'new'，
-        // 导致 isCardCompletedToday 返回 false，navigateToNextUnpracticed 原地踏步
         if (isChild) {
           upsertLatestSessions({
             [targetUid]: {
-              ...(childSessionData![targetUid] || generateNewSession({ algorithm })),
+              ...omitIsNew(childSessionData![targetUid] || generateNewSession({ algorithm })),
               ...practiceResult,
-              isNew: false,
               dateCreated: now,
             } as Session,
             [parentUid!]: updatedParentSession!,
@@ -391,9 +398,8 @@ export const useReviewRuntime = ({
           const baseData = baseCardData || currentCardData;
           upsertLatestSessions({
             [targetUid]: {
-              ...baseData,
+              ...omitIsNew(baseData),
               ...practiceResult,
-              isNew: false,
               dateCreated: now,
             } as Session,
           });
