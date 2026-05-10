@@ -1,9 +1,7 @@
 import * as React from 'react';
 import * as Blueprint from '@blueprintjs/core';
-import MigrateLegacyDataPanel from '~/components/MigrateLegacyDataPanel';
 import HistoryCleanupSection from '~/components/overlay/HistoryCleanup';
 import SettingsForm, { SettingsFormSettings, SettingsFormHandle } from '~/components/SettingsForm';
-import { colors } from '~/theme';
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -49,21 +47,7 @@ const SettingsDialog = ({
         className="bp3-dialog-body"
         style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}
       >
-        <SettingsForm
-          ref={formRef}
-          settings={settings}
-          dataPageTitle={dataPageTitle}
-        />
-
-        <div style={{ marginBottom: '20px', borderTop: '1px solid #394b59', paddingTop: '15px' }}>
-          <span style={{ fontSize: '14px', fontWeight: 600 }}>Data Migration</span>
-          <p style={{ fontSize: '12px', color: colors.textMuted, margin: '5px 0 10px 0' }}>
-            Migrate card data to the current architecture: convert reviewMode fields to algorithm +
-            interaction, rename legacy field names, remove redundant fields, and migrate legacy lbl_progress
-            to independent child block sessions. Safe to run multiple times.
-          </p>
-          <MigrateLegacyDataPanel dataPageTitle={dataPageTitle} />
-        </div>
+        <SettingsForm ref={formRef} settings={settings} dataPageTitle={dataPageTitle} />
 
         <HistoryCleanupSection
           dataPageTitle={dataPageTitle}
@@ -73,11 +57,12 @@ const SettingsDialog = ({
           }}
         />
       </div>
-      <div className="bp3-dialog-footer" style={{ padding: '10px 20px 15px', borderTop: '1px solid #394b59' }}>
+      <div
+        className="bp3-dialog-footer"
+        style={{ padding: '10px 20px 15px', borderTop: '1px solid #394b59' }}
+      >
         <div className="bp3-dialog-footer-actions">
-          <Blueprint.Button onClick={onClose}>
-            Close
-          </Blueprint.Button>
+          <Blueprint.Button onClick={onClose}>Close</Blueprint.Button>
           <Blueprint.Button intent="primary" onClick={handleApplyAndClose}>
             Apply & Restart
           </Blueprint.Button>

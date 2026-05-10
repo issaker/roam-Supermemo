@@ -86,10 +86,6 @@ Open settings via the ⚙ gear icon in the review overlay header. Changes apply 
 
 Use `{hide me}` curly braces to create cloze deletions. Text inside `{}` is masked when answers are hidden and revealed on "Show Answer". Roam's native `^^highlight^^` is NOT treated as cloze.
 
-### Data Migration
-
-Settings → Data Migration panel. Converts `reviewMode::` → `algorithm::` + `interaction::`, renames legacy field names to `{owner}_{purpose}` convention, merges meta blocks into sessions, migrates `lbl_progress` to independent child block sessions, and converts `FIXED_DAYS/WEEKS/MONTHS/YEARS` → `FIXED_TIME`. Safe to run multiple times.
-
 ## Architecture — First Principles
 
 The queue is an immutable snapshot, not a computation. Built once per session, modified by reinsert and filtered by display masks. Persisted to `localStorage` so page refreshes resume where you left off.
@@ -209,7 +205,7 @@ roam/Supermemo
 Roam loads via `<script>`. Missing default export → `Uncaught SyntaxError`.
 
 ### No runtime backward compatibility
-`resolveReviewConfig` returns PROGRESSIVE for unrecognized values. Old data MUST migrate via Data Migration panel. Permanent compat = technical debt.
+`resolveReviewConfig` returns PROGRESSIVE for unrecognized values. Legacy formats are not supported — only the current unified data format is used.
 
 ### Why mirrored state is forbidden
 
@@ -267,7 +263,6 @@ src/
 │   ├── DeckConfigsTable.tsx # Table-based deck management UI
 │   ├── SettingsForm.tsx     # Settings form with all options
 │   ├── SidePanelWidget.tsx  # Sidebar review entry point
-│   └── MigrateLegacyDataPanel.tsx
 ├── contexts/                # PracticeSessionContext, AlgorithmContext
 └── utils/                   # date, string, dom, async, deckConfig, deckWeight
 ```

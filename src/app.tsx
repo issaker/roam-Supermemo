@@ -84,15 +84,9 @@ const App = () => {
 
   React.useEffect(() => {
     tagsListRef.current = tagsList;
-  }, [tagsList]);
-
-  React.useEffect(() => {
     showPracticeOverlayRef.current = showPracticeOverlay;
-  }, [showPracticeOverlay]);
-
-  React.useEffect(() => {
     fetchPracticeDataRef.current = fetchPracticeData;
-  }, [fetchPracticeData]);
+  }, [tagsList, showPracticeOverlay, fetchPracticeData]);
 
   const onBlockEnterHandler = (elm: HTMLTextAreaElement) => {
     const tags = tagsListRef.current.filter((tag) => elm.value.includes(tag));

@@ -2,6 +2,7 @@ import { RecordUid, Session, SchedulingAlgorithm, classifyCard } from '~/models/
 import { generateNewSession } from '~/queries/utils';
 import { generatePracticeData } from '~/practice';
 import { getLblQueueState } from '~/models/practice';
+import { omitUndefined } from '~/utils/object';
 import {
   deriveParentNextDueDateFromChildSessions,
   resolveBaseForCalculation,
@@ -70,7 +71,7 @@ export const calculateChildReview = ({
   const practiceResult = generatePracticeData({
     ...baseForCalc,
     algorithm,
-    ...(sm2_grade !== undefined && { sm2_grade }),
+    ...omitUndefined({ sm2_grade }),
     dateCreated: now,
   });
 
@@ -121,10 +122,9 @@ export const calculateNormalReview = ({
   const practiceResult = generatePracticeData({
     ...baseData,
     sm2_grade: grade,
-    ...(algorithm && { algorithm }),
-    ...(interaction && { interaction }),
-    ...(fixed_multiplier !== undefined && { fixed_multiplier }),
-    ...(fixed_unit !== undefined && { fixed_unit }),
+    algorithm,
+    interaction,
+    ...omitUndefined({ fixed_multiplier, fixed_unit }),
     dateCreated: now,
   });
 

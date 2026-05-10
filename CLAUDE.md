@@ -162,7 +162,7 @@ Do NOT remove `library.export: 'default'` from standalone config — Roam loads 
 
 - **Build:** `library.export: 'default'` in webpack standalone config must not be removed (Roam loads via `<script>`).
 - **Filename conflict:** Do NOT name a roam/js script `extension.js` — Roam reserves this name for Extension Settings. The standalone output is named `standalone.js` for this reason.
-- **No runtime backward compat.** Old data MUST migrate via Data Migration panel (Settings → Data Migration).
+- **No runtime backward compat.** Legacy data formats are not supported — only the current unified data format is used.
 - **`resolveBaseForCalculation`** must be called before scheduling math on same-day re-reviews, or intervals inflate.
 - **`hasCloze` is derived from block data** (children or `{...}` in text), not from DOM. Do not add a useState + useEffect for it — the `init=true` pattern was replaced with pure derivation.
 - **`setShowAnswers(false)` MUST precede `currentIndex` advance** in `reviewUnit`. Reordering them causes the wrong card's showAnswers override to be reset when keyboard shortcuts fire grading (Blueprint's global event listeners are outside React's batch context), breaking showAnswers for reinserted Forgot cards.

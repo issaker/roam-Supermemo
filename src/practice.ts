@@ -1,10 +1,7 @@
 import { savePracticeData } from '~/queries/save';
 import * as dateUtils from '~/utils/date';
-import {
-  SchedulingAlgorithm,
-  FixedTimeUnit,
-  Session,
-} from '~/models/session';
+import { omitUndefined } from '~/utils/object';
+import { SchedulingAlgorithm, FixedTimeUnit, Session } from '~/models/session';
 
 export const supermemo = (
   item: { sm2_interval: number; sm2_repetitions: number; sm2_eFactor: number },
@@ -83,7 +80,11 @@ export const generatePracticeData = ({
       progressive_interval,
     } = props;
     const sm2Result = supermemo(
-      { sm2_interval: sm2_interval || 0, sm2_repetitions: sm2_repetitions || 0, sm2_eFactor: sm2_eFactor || 2.5 },
+      {
+        sm2_interval: sm2_interval || 0,
+        sm2_repetitions: sm2_repetitions || 0,
+        sm2_eFactor: sm2_eFactor || 2.5,
+      },
       sm2_grade || 0
     );
     const nextDueDate = dateUtils.addDays(referenceDate, sm2Result.sm2_interval);
@@ -95,21 +96,15 @@ export const generatePracticeData = ({
       sm2_repetitions: sm2Result.sm2_repetitions,
       sm2_interval: sm2Result.sm2_interval,
       sm2_eFactor: sm2Result.sm2_eFactor,
-      ...(progressive_repetitions !== undefined && { progressive_repetitions }),
-      ...(progressive_interval !== undefined && { progressive_interval }),
+      ...omitUndefined({ progressive_repetitions, progressive_interval }),
       dateCreated: referenceDate,
       nextDueDate,
     };
   }
 
   if (algorithm === SchedulingAlgorithm.PROGRESSIVE) {
-    const {
-      progressive_repetitions,
-      sm2_repetitions,
-      sm2_eFactor,
-      sm2_interval,
-      sm2_grade,
-    } = props;
+    const { progressive_repetitions, sm2_repetitions, sm2_eFactor, sm2_interval, sm2_grade } =
+      props;
     const currentProgReps = progressive_repetitions || 0;
     const calculatedInterval = progressiveInterval(currentProgReps);
     const nextDueDate = dateUtils.addDays(referenceDate, calculatedInterval);
@@ -119,10 +114,7 @@ export const generatePracticeData = ({
       interaction,
       progressive_interval: calculatedInterval,
       progressive_repetitions: currentProgReps + 1,
-      ...(sm2_repetitions !== undefined && { sm2_repetitions }),
-      ...(sm2_eFactor !== undefined && { sm2_eFactor }),
-      ...(sm2_interval !== undefined && { sm2_interval }),
-      ...(sm2_grade !== undefined && { sm2_grade }),
+      ...omitUndefined({ sm2_repetitions, sm2_eFactor, sm2_interval, sm2_grade }),
       dateCreated: referenceDate,
       nextDueDate,
     };
@@ -155,12 +147,14 @@ export const generatePracticeData = ({
       interaction,
       fixed_multiplier: value,
       fixed_unit: unit,
-      ...(progressive_repetitions !== undefined && { progressive_repetitions }),
-      ...(progressive_interval !== undefined && { progressive_interval }),
-      ...(sm2_repetitions !== undefined && { sm2_repetitions }),
-      ...(sm2_eFactor !== undefined && { sm2_eFactor }),
-      ...(sm2_interval !== undefined && { sm2_interval }),
-      ...(sm2_grade !== undefined && { sm2_grade }),
+      ...omitUndefined({
+        progressive_repetitions,
+        progressive_interval,
+        sm2_repetitions,
+        sm2_eFactor,
+        sm2_interval,
+        sm2_grade,
+      }),
       nextDueDate,
     };
   }

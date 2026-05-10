@@ -36,33 +36,38 @@ const useCardBlock = (
 
   const [overrideMap, setOverrideMap] = React.useState<Record<string, boolean>>({});
 
-  // refUid 变化时清除旧卡片覆盖，确保回访时答案默认隐藏
   const prevRefUidRef = React.useRef<string | undefined>(refUid);
-  if (prevRefUidRef.current && prevRefUidRef.current !== refUid) {
-    const oldUid = prevRefUidRef.current;
-    setOverrideMap((prev) => {
-      if (!(oldUid in prev)) return prev;
-      const next = { ...prev };
-      delete next[oldUid];
-      return next;
-    });
-  }
-  prevRefUidRef.current = refUid;
+
+  // refUid 变化时清除旧卡片覆盖，确保回访时答案默认隐藏
+  React.useEffect(() => {
+    const prevUid = prevRefUidRef.current;
+    prevRefUidRef.current = refUid;
+    if (prevUid && prevUid !== refUid) {
+      setOverrideMap((prev) => {
+        if (!(prevUid in prev)) return prev;
+        const next = { ...prev };
+        delete next[prevUid];
+        return next;
+      });
+    }
+  }, [refUid]);
+
+  const prevResetKeyRef = React.useRef<number | undefined>(resetKey);
 
   // resetKey 变化（同一卡片被"刷新"）时清除当前卡片覆盖
-  // 仅在卡片实际显示时同步 key，避免 refUid=undefined 的过渡渲染消耗掉 key 变化
-  const prevResetKeyRef = React.useRef<number | undefined>(resetKey);
-  if (resetKey !== undefined && prevResetKeyRef.current !== resetKey && refUid) {
-    setOverrideMap((prev) => {
-      if (!(refUid in prev)) return prev;
-      const next = { ...prev };
-      delete next[refUid];
-      return next;
-    });
-  }
-  if (refUid) {
+  React.useEffect(() => {
+    if (resetKey === undefined || !refUid) return;
+    const prevKey = prevResetKeyRef.current;
     prevResetKeyRef.current = resetKey;
-  }
+    if (prevKey !== resetKey) {
+      setOverrideMap((prev) => {
+        if (!(refUid in prev)) return prev;
+        const next = { ...prev };
+        delete next[refUid];
+        return next;
+      });
+    }
+  }, [resetKey, refUid]);
 
   const setShowAnswers = React.useCallback(
     (show: boolean) => {

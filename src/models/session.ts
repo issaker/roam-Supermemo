@@ -30,10 +30,10 @@
  *   - FixedTime:  Custom time card — user-defined interval via number + unit (blue border)
  *
  *   No backward compatibility policy:
- *   The plugin does not provide runtime backward compatibility. Old data must be migrated
- *   via the data migration panel in a single pass. resolveReviewConfig falls back to the
- *   default (PROGRESSIVE) for invalid algorithm values without legacy name mapping.
- *   This is an intentional design decision to avoid long-term technical debt.
+ *   The plugin does not provide runtime backward compatibility. Legacy data formats
+ *   are not supported — only the current unified session-block format is used.
+ *   resolveReviewConfig falls back to the default (PROGRESSIVE) for invalid algorithm
+ *   values without legacy name mapping.
  *
  *   LBL architecture (Mini-Deck model):
  *   Child blocks in LBL mode have their own independent Session entries
@@ -61,7 +61,7 @@ export type Session = {
   progressive_interval?: number;
   fixed_multiplier?: number;
   fixed_unit?: FixedTimeUnit;
-  baseSessionData?: Session;
+  baseSessionData?: Omit<Session, 'baseSessionData'>;
 };
 
 export interface CardMeta {
@@ -395,7 +395,6 @@ export const resolveBaseForCalculation = (
 
 /**
  * Resolve algorithm and interaction config. Invalid values fall back to defaults (PROGRESSIVE + NORMAL).
- * No legacy name mapping — old data must be migrated via the data migration panel in a single pass.
  */
 export const resolveReviewConfig = (
   rawAlgorithm?: string,
