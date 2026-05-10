@@ -248,5 +248,16 @@ export const useQueue = (cardSet: CardSet | null, queueId: string, _tag: string)
     return removedUidsMap.get(queueId) ?? new Set<RecordUid>();
   }, [queueId, removedUidsMap]);
 
+  console.log(
+    'DEBUG useQueue return:',
+    JSON.stringify({
+      uids,
+      hasCards,
+      cardSetNew: cardSet?.new?.length,
+      cardSetDue: cardSet?.due?.length,
+      quotaSize: quotaAllowed.size,
+      stateMapSize: stateMap.size,
+    })
+  );
   return { uids, removedUids, reinsert, checkDeleted };
 };

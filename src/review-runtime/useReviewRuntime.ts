@@ -130,6 +130,7 @@ export const useReviewRuntime = ({
       ? filteredQueue[viewState.currentIndex]
       : undefined;
 
+  // 为 ref 模式下的稳定回调收集最新依赖
   const currentPrimaryEntryId = currentCardRefUid ? `card:${currentCardRefUid}` : undefined;
 
   const focusPrimaryByOffset = React.useCallback(

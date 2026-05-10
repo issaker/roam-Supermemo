@@ -9,6 +9,34 @@ export const useSessionFacts = (initialData: Records, dataPageTitle: string) => 
     pendingByUid: {},
   });
 
+  // 同步 initialData（practiceData）到 facts.latestByUid。
+  // initialData 是异步获取的权威数据源，必须在变化时合并到 facts 中，
+  // 否则 currentCardData 会是 undefined，导致 Footer 显示完成状态而非按钮。
+  // 使用 isFirstRenderRef 跳过首次渲染（useState 初始值已处理），
+  // 后续变化时合并数据。
+  const isFirstRenderRef = React.useRef(true);
+  React.useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+    if (Object.keys(initialData).length === 0) return;
+    setFacts((prev) => {
+      const merged = { ...prev.latestByUid, ...initialData };
+      if (Object.keys(prev.latestByUid).length === Object.keys(merged).length) {
+        let changed = false;
+        for (const key of Object.keys(initialData)) {
+          if (prev.latestByUid[key] !== initialData[key]) {
+            changed = true;
+            break;
+          }
+        }
+        if (!changed) return prev;
+      }
+      return { ...prev, latestByUid: merged };
+    });
+  }, [initialData]);
+
   const setPendingState = React.useCallback(
     (uid: RecordUid, state: SessionFacts['pendingByUid'][string]) => {
       setFacts((prev) => ({

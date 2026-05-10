@@ -370,13 +370,33 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
   ]);
 
   const reviewStatus = React.useMemo<ReviewStatus | null>(() => {
-    if (!currentCardData) return null;
+    if (!currentCardData) {
+      // 新卡片没有 session 数据时，currentCardData 为 undefined，
+      // 但该卡片已存在于 tagCardSets.newUids 中（由 deckConfigs 分类产生），
+      // 应显示 "New" 状态。直接返回 null 会导致 StatusBadge 空渲染。
+      if (
+        currentCardRefUid &&
+        selectedTag &&
+        tagCardSets[selectedTag]?.newUids?.includes(currentCardRefUid)
+      ) {
+        return 'new';
+      }
+      return null;
+    }
     return getReviewStatus({
       session: currentReviewSession,
       isNew: Boolean(!isLineByLineActive && isNew),
       now: new Date(),
     });
-  }, [currentCardData, currentReviewSession, isLineByLineActive, isNew]);
+  }, [
+    currentCardData,
+    currentReviewSession,
+    isLineByLineActive,
+    isNew,
+    currentCardRefUid,
+    tagCardSets,
+    selectedTag,
+  ]);
 
   const isLearned = React.useMemo(() => {
     return isSessionMastered(currentReviewSession, new Date());
