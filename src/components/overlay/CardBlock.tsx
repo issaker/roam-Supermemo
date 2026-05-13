@@ -68,6 +68,8 @@ const renderRoamBlock = async ({
   try {
     if (!skipExpand) {
       await expandBlock(uid);
+    } else {
+      await restoreBlock(uid);
     }
     if (isStale()) return;
 
