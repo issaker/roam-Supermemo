@@ -114,6 +114,22 @@ export const useQueue = (cardSet: CardSet | null, queueId: string) => {
     return { uids: [], removedUids: [] };
   });
 
+  // Bug fix: 切换牌组或跨天时 queueId 变化，需重建快照
+  // 根因：合并 Map→单一 state 后丢失了多 queueId 支持，queueId 变化时 useState 不重新初始化
+  // 方案：追踪 queueId 变化，从 localStorage 或 cardSet 重建
+  const [prevQueueId, setPrevQueueId] = React.useState(queueId);
+  if (queueId !== prevQueueId) {
+    setPrevQueueId(queueId);
+    const persisted = loadPersistedQueue(queueId);
+    if (persisted) {
+      setState(persisted);
+    } else if (cardSet) {
+      setState({ uids: buildInitialUids(cardSet), removedUids: [] });
+    } else {
+      setState({ uids: [], removedUids: [] });
+    }
+  }
+
   const hasCards =
     cardSet && cardSet.due.length + cardSet.new.length + cardSet.completed.length > 0;
 
