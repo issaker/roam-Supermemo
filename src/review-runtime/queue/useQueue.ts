@@ -18,7 +18,11 @@ const buildInitialUids = (cardSet: CardSet): RecordUid[] => {
   return uids;
 };
 
+// 缓存版本号：结构变更时递增，旧缓存自动作废
+const PERSIST_VERSION = 1;
+
 type PersistedQueue = {
+  version: number;
   uids: RecordUid[];
   removedUids: RecordUid[];
 };
@@ -28,8 +32,9 @@ const loadPersistedQueue = (queueId: string): PersistedQueue | null => {
     const raw = localStorage.getItem(STORAGE_PREFIX + queueId);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed?.uids)) return null;
+    if (parsed?.version !== PERSIST_VERSION || !Array.isArray(parsed?.uids)) return null;
     return {
+      version: parsed.version,
       uids: parsed.uids,
       removedUids: Array.isArray(parsed.removedUids) ? parsed.removedUids : [],
     };
@@ -38,9 +43,12 @@ const loadPersistedQueue = (queueId: string): PersistedQueue | null => {
   }
 };
 
-const savePersistedQueue = (queueId: string, state: PersistedQueue) => {
+const savePersistedQueue = (queueId: string, state: QueueState) => {
   try {
-    localStorage.setItem(STORAGE_PREFIX + queueId, JSON.stringify(state));
+    localStorage.setItem(
+      STORAGE_PREFIX + queueId,
+      JSON.stringify({ version: PERSIST_VERSION, uids: state.uids, removedUids: state.removedUids })
+    );
   } catch (e) {
     console.warn('Memo: Failed to persist queue state', e);
   }
