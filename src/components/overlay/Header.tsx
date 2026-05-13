@@ -15,7 +15,7 @@ import {
 import { MainContext } from '~/components/overlay/PracticeOverlay';
 import { colors } from '~/theme';
 import { useSafeContext } from '~/hooks/useSafeContext';
-import { usePracticeSession } from '~/contexts/PracticeSessionContext';
+import { usePracticeSession, LiveTagCardCounts } from '~/contexts/PracticeSessionContext';
 import { useAlgorithmContext } from '~/hooks/useAlgorithmContext';
 
 interface HeaderProps {
@@ -47,7 +47,17 @@ const HeaderWrapper = styled.div`
   }
 `;
 
-const TagSelector = ({ tagsList, selectedTag, onTagChange, liveTagCardCounts }) => {
+const TagSelector = ({
+  tagsList,
+  selectedTag,
+  onTagChange,
+  liveTagCardCounts,
+}: {
+  tagsList: string[];
+  selectedTag: string;
+  onTagChange: (_tag: string) => void;
+  liveTagCardCounts: LiveTagCardCounts;
+}) => {
   return (
     <TagSelect
       items={tagsList}
@@ -97,7 +107,19 @@ const Tag = styled(Blueprint.Tag)`
   }
 `;
 
-const TagSelectorItem = ({ text, onClick, active, tagsList, liveTagCardCounts }) => {
+const TagSelectorItem = ({
+  text,
+  onClick,
+  active,
+  tagsList,
+  liveTagCardCounts,
+}: {
+  text: string;
+  onClick: React.MouseEventHandler<HTMLElement>;
+  active: boolean;
+  tagsList: string[];
+  liveTagCardCounts: LiveTagCardCounts;
+}) => {
   const dueCount = liveTagCardCounts[text]?.dueCount ?? 0;
   const newCount = liveTagCardCounts[text]?.newCount ?? 0;
 
