@@ -83,11 +83,21 @@ type QueueState = {
 /**
  * 快照截停策略 — 每日一次排序，之后仅响应用户操作（"帧间补丁"模式）
  *
- * ┌──────────────────────────────────────────────────────────────┐
- * │  state.uids（快照）                                           │
- * │  每日首次构建时按 classifyAllCards 排序，写入 localStorage       │
- * │  之后不再重排序——分类变化（due→completed/scheduled）不改变快照   │
- * └───────────────────────────┬──────────────────────────────────┘
+ * 三组概念，两个阶段：
+ *
+ *   【数据层遮罩 — app.tsx 阶段（构建 cardSet 时一次性完成）】
+ *   ① quotaTrim：每日配额限制（allocateDailyCards）
+ *   ② blacklist：黑名单牌组过滤（filterBlacklistedDecks）
+ *   它们直接修改 cardSet 的 due/new/completed 数组，快照构建时生效。
+ *   放在 app 层而非 queue 层的原因：它们是纯数据计算，不需要运行时感知。
+ *
+ *   【运行时层 — useQueue 阶段（快照 + 补丁 + 运行时遮罩）】
+ *   ┌──────────────────────────────────────────────────────────────┐
+ *   │  快照层（ref map，每个 queueId 独立存储）                       │
+ *   │  每日首次构建时按 classifyAllCards 排序                          │
+ *   │  之后不再重排序——分类变化（due→completed/scheduled）不改变快照   │
+ *   │  切换牌组：从 ref map 恢复对应快照，不丢失状态                   │
+ *   └───────────────────────────┬──────────────────────────────────┘
  *                             │
  *   ┌─────────────────────────┴─────────────────────────────┐
  *   │  补丁层（仅这些操作修改快照，类似帧间差分）               │
@@ -96,10 +106,8 @@ type QueueState = {
  *   └─────────────────────────┬─────────────────────────────┘
  *                             │
  *   ┌─────────────────────────┴─────────────────────────────┐
- *   │  遮罩层（纯展示过滤，不修改快照，用户可撤销）              │
- *   │  ① quotaTrim：每日配额限制（allocateDailyCards 截断）   │
- *   │  ② blacklist：黑名单牌组过滤（filterBlacklistedDecks）   │
- *   │  ③ removedUids：已删除 block 的 uid 隐藏（可撤回）       │
+ *   │  运行时遮罩层（纯展示过滤，可撤销）                        │
+ *   │  ③ removedUids：已删除 block（用户删除后可撤回）          │
  *   └─────────────────────────┬─────────────────────────────┘
  *                             │
  *                             ▼
@@ -107,36 +115,45 @@ type QueueState = {
  */
 
 export const useQueue = (cardSet: CardSet | null, queueId: string) => {
-  const [state, setState] = React.useState<QueueState>(() => {
-    const persisted = loadPersistedQueue(queueId);
-    if (persisted) return persisted;
-    if (cardSet) return { uids: buildInitialUids(cardSet), removedUids: [] };
-    return { uids: [], removedUids: [] };
-  });
+  // 多牌组状态：ref 存储所有 queueId 的独立快照，切换时不丢失
+  // 用 useReducer 版本号驱动重渲染，避免在 render 期间 setState
+  const stateMapRef = React.useRef<Map<string, QueueState>>(new Map());
+  const queueIdRef = React.useRef(queueId);
+  queueIdRef.current = queueId;
+  const [, bumpVersion] = React.useReducer((v: number) => v + 1, 0);
 
-  // Bug fix: 切换牌组或跨天时 queueId 变化，需重建快照
-  // 根因：合并 Map→单一 state 后丢失了多 queueId 支持，queueId 变化时 useState 不重新初始化
-  // 方案：追踪 queueId 变化，从 localStorage 或 cardSet 重建
-  const [prevQueueId, setPrevQueueId] = React.useState(queueId);
-  if (queueId !== prevQueueId) {
-    setPrevQueueId(queueId);
+  const getOrCreateState = (): QueueState => {
+    const cached = stateMapRef.current.get(queueId);
+    if (cached) return cached;
     const persisted = loadPersistedQueue(queueId);
-    if (persisted) {
-      setState(persisted);
-    } else if (cardSet) {
-      setState({ uids: buildInitialUids(cardSet), removedUids: [] });
-    } else {
-      setState({ uids: [], removedUids: [] });
-    }
-  }
+    const initial: QueueState = persisted
+      ? persisted
+      : cardSet
+        ? { uids: buildInitialUids(cardSet), removedUids: [] }
+        : { uids: [], removedUids: [] };
+    stateMapRef.current.set(queueId, initial);
+    return initial;
+  };
+
+  const updateState = (updater: (prev: QueueState) => QueueState) => {
+    const qId = queueIdRef.current;
+    const current = stateMapRef.current.get(qId);
+    if (!current) return;
+    const next = updater(current);
+    if (next === current) return;
+    stateMapRef.current.set(qId, next);
+    bumpVersion();
+  };
+
+  const state = getOrCreateState();
 
   const hasCards =
     cardSet && cardSet.due.length + cardSet.new.length + cardSet.completed.length > 0;
 
-  // 懒初始化：localStorage 无缓存且 cardSet 非空时，从 cardSet 构建（state 初始值未覆盖的情况）
-  if (!state.uids.length && hasCards) {
-    const initialUids = buildInitialUids(cardSet!);
-    setState({ uids: initialUids, removedUids: [] });
+  const initialBuiltRef = React.useRef(false);
+  if (!state.uids.length && hasCards && !initialBuiltRef.current) {
+    initialBuiltRef.current = true;
+    updateState(() => ({ uids: buildInitialUids(cardSet!), removedUids: [] }));
   }
 
   // 首次挂载时清理非当日的旧缓存
@@ -147,30 +164,29 @@ export const useQueue = (cardSet: CardSet | null, queueId: string) => {
   // 补丁层 — 日内新增：cardSet 中出现的新 uid，追加到快照末尾
   React.useEffect(() => {
     if (!cardSet || !hasCards) return;
-    setState((prev) => {
+    updateState((prev) => {
       const existingSet = new Set(prev.uids);
       const allCardUids = [...cardSet.completed, ...cardSet.due, ...cardSet.new];
       const newUids = allCardUids.filter((uid) => !existingSet.has(uid));
       if (newUids.length === 0) return prev;
       return { ...prev, uids: [...prev.uids, ...newUids] };
     });
-  }, [queueId, cardSet, hasCards]);
-
-  // 遮罩层 — quotaAllowed：快照中的 uid 全部可见
-  const quotaAllowed = React.useMemo(() => new Set(state.uids), [state.uids]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queueId, hasCards]);
 
   const removedUidsSet = React.useMemo(() => new Set(state.removedUids), [state.removedUids]);
 
-  // 展示层：快照 → quota 遮罩 → 删除遮罩
+  const quotaAllowed = React.useMemo(() => new Set(state.uids), [state.uids]);
+
+  // 展示层：快照 → 运行时遮罩
   const uids = React.useMemo(() => {
     return state.uids.filter((uid) => quotaAllowed.has(uid) && !removedUidsSet.has(uid));
   }, [state.uids, quotaAllowed, removedUidsSet]);
 
   // 补丁层 — reinsert：Forgot / LBL 插队操作
   const reinsert = React.useCallback((uid: RecordUid, afterUid: RecordUid, offset: number) => {
-    setState((prev) => {
+    updateState((prev) => {
       const nextUids = [...prev.uids];
-
       const existingIndex = nextUids.indexOf(uid);
 
       let insertAt: number;
@@ -193,18 +209,22 @@ export const useQueue = (cardSet: CardSet | null, queueId: string) => {
 
       return { ...prev, uids: nextUids };
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 遮罩层 — checkDeleted：检测已被物理删除的 block，加入 removedUids
+  // 运行时遮罩 — checkDeleted：检测已被物理删除的 block，加入 removedUids
   const checkDeleted = React.useCallback(async () => {
-    if (!state.uids.length) return;
-    const deleted = await findDeletedUids(state.uids);
-    setState((prev) => {
+    const qId = queueIdRef.current;
+    const current = stateMapRef.current.get(qId);
+    if (!current || !current.uids.length) return;
+    const deleted = await findDeletedUids(current.uids);
+    updateState((prev) => {
       const newRemoved = Array.from(new Set([...prev.removedUids, ...deleted]));
       if (newRemoved.length === prev.removedUids.length) return prev;
       return { ...prev, removedUids: newRemoved };
     });
-  }, [state.uids]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useEffect(() => {
     if (state.uids.length > 0) {
@@ -213,11 +233,13 @@ export const useQueue = (cardSet: CardSet | null, queueId: string) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueId, state.uids]);
 
-  // 持久化：state 变更时自动写入 localStorage
+  // 持久化：状态变更时自动写入 localStorage
   React.useEffect(() => {
-    if (!state.uids.length) return;
-    savePersistedQueue(queueId, state);
-  }, [queueId, state]);
+    const qId = queueIdRef.current;
+    const s = stateMapRef.current.get(qId);
+    if (!s || !s.uids.length) return;
+    savePersistedQueue(qId, s);
+  });
 
   return { uids, reinsert, checkDeleted };
 };
