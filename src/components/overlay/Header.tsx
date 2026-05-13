@@ -97,9 +97,9 @@ const Tag = styled(Blueprint.Tag)`
 `;
 
 const TagSelectorItem = ({ text, onClick, active, tagsList }) => {
-  const { tagCardSets } = usePracticeSession();
-  const dueCount = tagCardSets[text]?.dueUids.length ?? 0;
-  const newCount = tagCardSets[text]?.newUids.length ?? 0;
+  const { tagCardSets, liveTagCardCounts } = usePracticeSession();
+  const dueCount = liveTagCardCounts?.[text]?.dueCount ?? tagCardSets[text]?.dueUids.length ?? 0;
+  const newCount = liveTagCardCounts?.[text]?.newCount ?? tagCardSets[text]?.newUids.length ?? 0;
 
   const index = tagsList.indexOf(text);
   const placement = index === tagsList.length - 1 ? 'bottom' : 'top';

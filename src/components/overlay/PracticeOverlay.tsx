@@ -58,10 +58,15 @@ import { undoCardSession } from '~/queries/save';
 
 import { RenderMode } from '~/models/practice';
 import { colors, getAlgorithmColor } from '~/theme';
-import { usePracticeSession, PracticeSessionContext } from '~/contexts/PracticeSessionContext';
+import {
+  usePracticeSession,
+  PracticeSessionContext,
+  LiveTagCardCounts,
+} from '~/contexts/PracticeSessionContext';
 import { AlgorithmProvider } from '~/contexts/AlgorithmContext';
 import { useReviewRuntime } from '~/review-runtime/useReviewRuntime';
 import { deriveChildSessionMap } from '~/review-runtime/selectors';
+import { isCardCompletedToday } from '~/review-runtime/reviewLogic';
 
 /**
  * MainContext: shared state for the review overlay.
@@ -183,6 +188,28 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     updateReviewConfigAction,
     checkDeleted,
   } = runtime;
+
+  const liveTagCardCounts = React.useMemo<LiveTagCardCounts>(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const [y, m, d] = today.split('-').map(Number);
+    const todayEnd = new Date(y, m - 1, d, 23, 59, 59);
+    const result: LiveTagCardCounts = {};
+    for (const [tag, cardSet] of Object.entries(tagCardSets)) {
+      const liveDue = cardSet.dueUids.filter(
+        (uid) => !isCardCompletedToday(uid, facts.latestByUid, cardSet.lblDeckMeta, todayEnd)
+      );
+      const liveNew = cardSet.newUids.filter(
+        (uid) => !isCardCompletedToday(uid, facts.latestByUid, cardSet.lblDeckMeta, todayEnd)
+      );
+      result[tag] = { dueCount: liveDue.length, newCount: liveNew.length };
+    }
+    return result;
+  }, [tagCardSets, facts.latestByUid]);
+
+  const sessionContextWithLiveCounts = React.useMemo(
+    () => ({ ...sessionContext, liveTagCardCounts }),
+    [sessionContext, liveTagCardCounts]
+  );
 
   const prevIsOpenRef = React.useRef(false);
   React.useEffect(() => {
@@ -711,7 +738,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
   }
 
   return (
-    <PracticeSessionContext.Provider value={sessionContext}>
+    <PracticeSessionContext.Provider value={sessionContextWithLiveCounts}>
       <AlgorithmProvider {...algorithmContextValue}>
         <MainContext.Provider value={mainContextValue}>
           <style>{MOBILE_OVERLAY_STYLES}</style>

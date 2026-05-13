@@ -4,6 +4,8 @@ import { Records } from '~/models/session';
 import { TagCardSets } from '~/models/practice';
 import { useSafeContext } from '~/hooks/useSafeContext';
 
+export type LiveTagCardCounts = Record<string, { dueCount: number; newCount: number }>;
+
 export interface PracticeSessionContextValue {
   settings: Settings;
   practiceData: Records;
@@ -16,6 +18,7 @@ export interface PracticeSessionContextValue {
   fetchPracticeData: () => void;
   dataPageTitle: string;
   updateSetting: <K extends keyof Settings>(_key: K, _value: Settings[K]) => void;
+  liveTagCardCounts?: LiveTagCardCounts;
 }
 
 export const PracticeSessionContext = React.createContext<PracticeSessionContextValue | undefined>(
@@ -38,6 +41,7 @@ export const PracticeSessionProvider = ({
   fetchPracticeData,
   dataPageTitle,
   updateSetting,
+  liveTagCardCounts,
   children,
 }: PracticeSessionProviderProps) => {
   const value = React.useMemo<PracticeSessionContextValue>(
@@ -53,6 +57,7 @@ export const PracticeSessionProvider = ({
       fetchPracticeData,
       dataPageTitle,
       updateSetting,
+      liveTagCardCounts,
     }),
     [
       settings,
@@ -66,6 +71,7 @@ export const PracticeSessionProvider = ({
       fetchPracticeData,
       dataPageTitle,
       updateSetting,
+      liveTagCardCounts,
     ]
   );
 
