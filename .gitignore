@@ -40,3 +40,6 @@ npm-debug.log*
 
 # ESLint cache
 .eslintcache
+
+# Release repo clone
+.release-repo/
