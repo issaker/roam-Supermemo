@@ -18,15 +18,14 @@ export interface PracticeSessionContextValue {
   fetchPracticeData: () => void;
   dataPageTitle: string;
   updateSetting: <K extends keyof Settings>(_key: K, _value: Settings[K]) => void;
-  liveTagCardCounts: LiveTagCardCounts;
+  liveTagCardCounts?: LiveTagCardCounts;
 }
 
 export const PracticeSessionContext = React.createContext<PracticeSessionContextValue | undefined>(
   undefined
 );
 
-type PracticeSessionProviderProps = Omit<PracticeSessionContextValue, 'liveTagCardCounts'> & {
-  liveTagCardCounts?: LiveTagCardCounts;
+type PracticeSessionProviderProps = PracticeSessionContextValue & {
   children: React.ReactNode;
 };
 
@@ -42,7 +41,7 @@ export const PracticeSessionProvider = ({
   fetchPracticeData,
   dataPageTitle,
   updateSetting,
-  liveTagCardCounts = {},
+  liveTagCardCounts,
   children,
 }: PracticeSessionProviderProps) => {
   const value = React.useMemo<PracticeSessionContextValue>(

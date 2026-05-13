@@ -15,7 +15,7 @@ import {
 import { MainContext } from '~/components/overlay/PracticeOverlay';
 import { colors } from '~/theme';
 import { useSafeContext } from '~/hooks/useSafeContext';
-import { usePracticeSession, LiveTagCardCounts } from '~/contexts/PracticeSessionContext';
+import { usePracticeSession } from '~/contexts/PracticeSessionContext';
 import { useAlgorithmContext } from '~/hooks/useAlgorithmContext';
 
 interface HeaderProps {
@@ -47,17 +47,7 @@ const HeaderWrapper = styled.div`
   }
 `;
 
-const TagSelector = ({
-  tagsList,
-  selectedTag,
-  onTagChange,
-  liveTagCardCounts,
-}: {
-  tagsList: string[];
-  selectedTag: string;
-  onTagChange: (_tag: string) => void;
-  liveTagCardCounts: LiveTagCardCounts;
-}) => {
+const TagSelector = ({ tagsList, selectedTag, onTagChange }) => {
   return (
     <TagSelect
       items={tagsList}
@@ -71,7 +61,6 @@ const TagSelector = ({
             active={modifiers.active}
             key={tag}
             onClick={handleClick}
-            liveTagCardCounts={liveTagCardCounts}
           />
         );
       }}
@@ -107,21 +96,10 @@ const Tag = styled(Blueprint.Tag)`
   }
 `;
 
-const TagSelectorItem = ({
-  text,
-  onClick,
-  active,
-  tagsList,
-  liveTagCardCounts,
-}: {
-  text: string;
-  onClick: React.MouseEventHandler<HTMLElement>;
-  active: boolean;
-  tagsList: string[];
-  liveTagCardCounts: LiveTagCardCounts;
-}) => {
-  const dueCount = liveTagCardCounts[text]?.dueCount ?? 0;
-  const newCount = liveTagCardCounts[text]?.newCount ?? 0;
+const TagSelectorItem = ({ text, onClick, active, tagsList }) => {
+  const { tagCardSets, liveTagCardCounts } = usePracticeSession();
+  const dueCount = liveTagCardCounts?.[text]?.dueCount ?? tagCardSets[text]?.dueUids.length ?? 0;
+  const newCount = liveTagCardCounts?.[text]?.newCount ?? tagCardSets[text]?.newUids.length ?? 0;
 
   const index = tagsList.indexOf(text);
   const placement = index === tagsList.length - 1 ? 'bottom' : 'top';
@@ -268,7 +246,7 @@ const Header = ({
   onToggleBreadcrumbs,
   onSettingsClick,
 }: HeaderProps) => {
-  const { selectedTag, tagsList, isCramming, settings, liveTagCardCounts } = usePracticeSession();
+  const { selectedTag, tagsList, isCramming, settings } = usePracticeSession();
   const { algorithm, interaction } = useAlgorithmContext();
   const { showBreadcrumbs } = settings;
   const { currentIndex, cardQueueLength } = useSafeContext(MainContext);
@@ -284,12 +262,7 @@ const Header = ({
       <div className="flex items-center">
         <BoxIcon icon="box" size={14} />
         <div tabIndex={-1}>
-          <TagSelector
-            tagsList={tagsList}
-            selectedTag={selectedTag}
-            onTagChange={onTagChange}
-            liveTagCardCounts={liveTagCardCounts}
-          />
+          <TagSelector tagsList={tagsList} selectedTag={selectedTag} onTagChange={onTagChange} />
         </div>
       </div>
       <div className="flex items-center justify-end">
