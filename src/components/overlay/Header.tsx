@@ -47,7 +47,7 @@ const HeaderWrapper = styled.div`
   }
 `;
 
-const TagSelector = ({ tagsList, selectedTag, onTagChange }) => {
+const TagSelector = ({ tagsList, selectedTag, onTagChange, liveTagCardCounts }) => {
   return (
     <TagSelect
       items={tagsList}
@@ -61,6 +61,7 @@ const TagSelector = ({ tagsList, selectedTag, onTagChange }) => {
             active={modifiers.active}
             key={tag}
             onClick={handleClick}
+            liveTagCardCounts={liveTagCardCounts}
           />
         );
       }}
@@ -96,8 +97,7 @@ const Tag = styled(Blueprint.Tag)`
   }
 `;
 
-const TagSelectorItem = ({ text, onClick, active, tagsList }) => {
-  const { liveTagCardCounts } = usePracticeSession();
+const TagSelectorItem = ({ text, onClick, active, tagsList, liveTagCardCounts }) => {
   const dueCount = liveTagCardCounts[text]?.dueCount ?? 0;
   const newCount = liveTagCardCounts[text]?.newCount ?? 0;
 
@@ -246,7 +246,7 @@ const Header = ({
   onToggleBreadcrumbs,
   onSettingsClick,
 }: HeaderProps) => {
-  const { selectedTag, tagsList, isCramming, settings } = usePracticeSession();
+  const { selectedTag, tagsList, isCramming, settings, liveTagCardCounts } = usePracticeSession();
   const { algorithm, interaction } = useAlgorithmContext();
   const { showBreadcrumbs } = settings;
   const { currentIndex, cardQueueLength } = useSafeContext(MainContext);
@@ -262,7 +262,12 @@ const Header = ({
       <div className="flex items-center">
         <BoxIcon icon="box" size={14} />
         <div tabIndex={-1}>
-          <TagSelector tagsList={tagsList} selectedTag={selectedTag} onTagChange={onTagChange} />
+          <TagSelector
+            tagsList={tagsList}
+            selectedTag={selectedTag}
+            onTagChange={onTagChange}
+            liveTagCardCounts={liveTagCardCounts}
+          />
         </div>
       </div>
       <div className="flex items-center justify-end">
