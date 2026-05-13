@@ -55,7 +55,7 @@ export const useReviewRuntime = ({
     uids: rawUids,
     reinsert: queueReinsert,
     checkDeleted,
-  } = useQueue(cardSet, queueId, selectedTag);
+  } = useQueue(cardSet, queueId);
 
   const filteredQueue = rawUids;
 

@@ -38,9 +38,9 @@ const loadPersistedQueue = (queueId: string): PersistedQueue | null => {
   }
 };
 
-const savePersistedQueue = (queueId: string, uids: RecordUid[], removedUids: RecordUid[]) => {
+const savePersistedQueue = (queueId: string, state: PersistedQueue) => {
   try {
-    localStorage.setItem(STORAGE_PREFIX + queueId, JSON.stringify({ uids, removedUids }));
+    localStorage.setItem(STORAGE_PREFIX + queueId, JSON.stringify(state));
   } catch (e) {
     console.warn('Memo: Failed to persist queue state', e);
   }
@@ -77,57 +77,50 @@ const findDeletedUids = async (uids: string[]): Promise<string[]> => {
 
 type QueueState = {
   uids: RecordUid[];
+  removedUids: RecordUid[];
 };
 
 /**
- * 全量快照 + 两层遮罩 + 插入层
+ * 快照截停策略 — 每日一次排序，之后仅响应用户操作（"帧间补丁"模式）
  *
- * ┌───────────────────┐
- * │  state.uids（快照） │  全量有序 uid 序列，每日首次构建，不可变基础
- * └─────────┬─────────┘
- *           │
- *   ┌───────┴───────┐
- *   │   插入层修改    │  reinsert(uid, afterUid) 用 uid 定位，不感知遮罩
- *   │  新卡片追加队尾  │
- *   └───────┬───────┘
- *           │
- *   ┌───────┴───────┐
- *   │   遮罩层过滤    │  纯展示过滤，不修改快照
- *   │ ① 配额遮罩     │  quotaAllowed：cardSet 的 due/new/completed 合集
- *   │ ② 黑名单遮罩   │  removedUidsMap：已删除 block 的 uid
- *   └───────┬───────┘
- *           │
- *           ▼
- *      展示队列 uids
+ * ┌──────────────────────────────────────────────────────────────┐
+ * │  state.uids（快照）                                           │
+ * │  每日首次构建时按 classifyAllCards 排序，写入 localStorage       │
+ * │  之后不再重排序——分类变化（due→completed/scheduled）不改变快照   │
+ * └───────────────────────────┬──────────────────────────────────┘
+ *                             │
+ *   ┌─────────────────────────┴─────────────────────────────┐
+ *   │  补丁层（仅这些操作修改快照，类似帧间差分）               │
+ *   │  ① reinsert：Forgot 重插入 / LBL 插队                   │
+ *   │  ② append：日内新增卡片默认追加到队尾                     │
+ *   └─────────────────────────┬─────────────────────────────┘
+ *                             │
+ *   ┌─────────────────────────┴─────────────────────────────┐
+ *   │  遮罩层（纯展示过滤，不修改快照，用户可撤销）              │
+ *   │  ① quotaTrim：每日配额限制（allocateDailyCards 截断）   │
+ *   │  ② blacklist：黑名单牌组过滤（filterBlacklistedDecks）   │
+ *   │  ③ removedUids：已删除 block 的 uid 隐藏（可撤回）       │
+ *   └─────────────────────────┬─────────────────────────────┘
+ *                             │
+ *                             ▼
+ *                        展示队列 uids
  */
 
-export const useQueue = (cardSet: CardSet | null, queueId: string, _tag: string) => {
-  const [stateMap, setStateMap] = React.useState<Map<string, QueueState>>(() => {
+export const useQueue = (cardSet: CardSet | null, queueId: string) => {
+  const [state, setState] = React.useState<QueueState>(() => {
     const persisted = loadPersistedQueue(queueId);
-    if (persisted) {
-      return new Map([[queueId, { uids: persisted.uids }]]);
-    }
-    return new Map();
-  });
-  const [removedUidsMap, setRemovedUidsMap] = React.useState<Map<string, Set<RecordUid>>>(() => {
-    const persisted = loadPersistedQueue(queueId);
-    if (persisted && persisted.removedUids.length > 0) {
-      return new Map([[queueId, new Set(persisted.removedUids)]]);
-    }
-    return new Map();
+    if (persisted) return persisted;
+    if (cardSet) return { uids: buildInitialUids(cardSet), removedUids: [] };
+    return { uids: [], removedUids: [] };
   });
 
   const hasCards =
     cardSet && cardSet.due.length + cardSet.new.length + cardSet.completed.length > 0;
 
-  // 懒初始化：localStorage 无缓存且 cardSet 非空时，从 cardSet 构建
-  if (!stateMap.has(queueId) && hasCards) {
+  // 懒初始化：localStorage 无缓存且 cardSet 非空时，从 cardSet 构建（state 初始值未覆盖的情况）
+  if (!state.uids.length && hasCards) {
     const initialUids = buildInitialUids(cardSet!);
-    setStateMap((prev) => {
-      const next = new Map(prev);
-      next.set(queueId, { uids: initialUids });
-      return next;
-    });
+    setState({ uids: initialUids, removedUids: [] });
   }
 
   // 首次挂载时清理非当日的旧缓存
@@ -135,118 +128,80 @@ export const useQueue = (cardSet: CardSet | null, queueId: string, _tag: string)
     cleanStaleQueueKeys(queueId);
   }, [queueId]);
 
-  // 日内新增：cardSet 中出现的新 uid 追加到快照末尾
+  // 补丁层 — 日内新增：cardSet 中出现的新 uid，追加到快照末尾
   React.useEffect(() => {
     if (!cardSet || !hasCards) return;
-    setStateMap((prev) => {
-      const state = prev.get(queueId);
-      if (!state) {
-        const allCardUids = [...cardSet.completed, ...cardSet.due, ...cardSet.new];
-        const next = new Map(prev);
-        next.set(queueId, { uids: allCardUids });
-        return next;
-      }
-      const existingSet = new Set(state.uids);
+    setState((prev) => {
+      const existingSet = new Set(prev.uids);
       const allCardUids = [...cardSet.completed, ...cardSet.due, ...cardSet.new];
       const newUids = allCardUids.filter((uid) => !existingSet.has(uid));
       if (newUids.length === 0) return prev;
-      const next = new Map(prev);
-      next.set(queueId, { uids: [...state.uids, ...newUids] });
-      return next;
+      return { ...prev, uids: [...prev.uids, ...newUids] };
     });
   }, [queueId, cardSet, hasCards]);
 
-  // 配额遮罩集合：cardSet 中所有应展示的 uid
-  const quotaAllowed = React.useMemo(() => {
-    if (!cardSet) return new Set<RecordUid>();
-    return new Set([...cardSet.completed, ...cardSet.due, ...cardSet.new]);
-  }, [cardSet]);
+  // 遮罩层 — quotaAllowed：快照中的 uid 全部可见
+  const quotaAllowed = React.useMemo(() => new Set(state.uids), [state.uids]);
 
-  // 展示层：全量快照 → 配额遮罩 → 黑名单遮罩
+  const removedUidsSet = React.useMemo(() => new Set(state.removedUids), [state.removedUids]);
+
+  // 展示层：快照 → quota 遮罩 → 删除遮罩
   const uids = React.useMemo(() => {
-    const state = stateMap.get(queueId);
-    const removed = removedUidsMap.get(queueId);
-    if (!state) return [];
-    let result = state.uids;
-    result = result.filter((uid) => quotaAllowed.has(uid));
-    if (removed && removed.size > 0) {
-      result = result.filter((uid) => !removed.has(uid));
-    }
-    return result;
-  }, [queueId, stateMap, removedUidsMap, quotaAllowed]);
+    return state.uids.filter((uid) => quotaAllowed.has(uid) && !removedUidsSet.has(uid));
+  }, [state.uids, quotaAllowed, removedUidsSet]);
 
-  const reinsert = React.useCallback(
-    (uid: RecordUid, afterUid: RecordUid, offset: number) => {
-      setStateMap((prev) => {
-        const state = prev.get(queueId);
-        if (!state) return prev;
-        const nextUids = [...state.uids];
+  // 补丁层 — reinsert：Forgot / LBL 插队操作
+  const reinsert = React.useCallback((uid: RecordUid, afterUid: RecordUid, offset: number) => {
+    setState((prev) => {
+      const nextUids = [...prev.uids];
 
-        const existingIndex = nextUids.indexOf(uid);
+      const existingIndex = nextUids.indexOf(uid);
 
-        let insertAt: number;
-        const afterPos = nextUids.indexOf(afterUid);
-        if (afterPos >= 0) {
-          insertAt = Math.min(afterPos + 1 + offset, nextUids.length);
-        } else if (existingIndex >= 0) {
-          insertAt = Math.min(existingIndex + 1 + offset, nextUids.length);
-        } else {
-          insertAt = nextUids.length;
-        }
-
-        if (existingIndex >= 0) {
-          nextUids.splice(existingIndex, 1);
-          const adjustedInsertAt = existingIndex < insertAt ? insertAt - 1 : insertAt;
-          nextUids.splice(adjustedInsertAt, 0, uid);
-        } else {
-          nextUids.splice(insertAt, 0, uid);
-        }
-
-        const next = new Map(prev);
-        next.set(queueId, { uids: nextUids });
-        return next;
-      });
-    },
-    [queueId]
-  );
-
-  const checkDeleted = React.useCallback(async () => {
-    if (!queueId) return;
-    const state = stateMap.get(queueId);
-    if (!state || state.uids.length === 0) return;
-
-    const deleted = await findDeletedUids(state.uids);
-
-    setRemovedUidsMap((prev) => {
-      const next = new Map(prev);
-      if (deleted.length === 0) {
-        next.delete(queueId);
+      let insertAt: number;
+      const afterPos = nextUids.indexOf(afterUid);
+      if (afterPos >= 0) {
+        insertAt = Math.min(afterPos + 1 + offset, nextUids.length);
+      } else if (existingIndex >= 0) {
+        insertAt = Math.min(existingIndex + 1 + offset, nextUids.length);
       } else {
-        next.set(queueId, new Set(deleted));
+        insertAt = nextUids.length;
       }
-      return next;
+
+      if (existingIndex >= 0) {
+        nextUids.splice(existingIndex, 1);
+        const adjustedInsertAt = existingIndex < insertAt ? insertAt - 1 : insertAt;
+        nextUids.splice(adjustedInsertAt, 0, uid);
+      } else {
+        nextUids.splice(insertAt, 0, uid);
+      }
+
+      return { ...prev, uids: nextUids };
     });
-  }, [queueId, stateMap]);
+  }, []);
+
+  // 遮罩层 — checkDeleted：检测已被物理删除的 block，加入 removedUids
+  const checkDeleted = React.useCallback(async () => {
+    if (!state.uids.length) return;
+    const deleted = await findDeletedUids(state.uids);
+    setState((prev) => {
+      const newRemoved = Array.from(new Set([...prev.removedUids, ...deleted]));
+      if (newRemoved.length === prev.removedUids.length) return prev;
+      return { ...prev, removedUids: newRemoved };
+    });
+  }, [state.uids]);
 
   React.useEffect(() => {
-    const state = stateMap.get(queueId);
-    if (state && state.uids.length > 0) {
+    if (state.uids.length > 0) {
       checkDeleted();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queueId, stateMap]);
+  }, [queueId, state.uids]);
 
-  // 持久化：stateMap / removedUidsMap 变更时自动写入 localStorage
+  // 持久化：state 变更时自动写入 localStorage
   React.useEffect(() => {
-    const state = stateMap.get(queueId);
-    if (!state) return;
-    const removed = removedUidsMap.get(queueId);
-    savePersistedQueue(queueId, state.uids, removed ? Array.from(removed) : []);
-  }, [queueId, stateMap, removedUidsMap]);
+    if (!state.uids.length) return;
+    savePersistedQueue(queueId, state);
+  }, [queueId, state]);
 
-  const removedUids = React.useMemo(() => {
-    return removedUidsMap.get(queueId) ?? new Set<RecordUid>();
-  }, [queueId, removedUidsMap]);
-
-  return { uids, removedUids, reinsert, checkDeleted };
+  return { uids, reinsert, checkDeleted };
 };
