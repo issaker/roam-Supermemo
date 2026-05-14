@@ -8,7 +8,6 @@ import {
   isGradingAlgorithm,
   isSessionMastered,
 } from '~/models/session';
-import useBlockInfo from '~/hooks/useBlockInfo';
 
 const NOOP = () => {};
 
@@ -22,6 +21,7 @@ interface LineByLineViewProps {
   showAnswers: boolean;
   currentChildAlgorithm: SchedulingAlgorithm;
   dueChildCount: number;
+  parentBlockInfo: import('~/queries').BlockInfo;
 }
 
 const LineByLineView = ({
@@ -34,15 +34,15 @@ const LineByLineView = ({
   showAnswers,
   currentChildAlgorithm,
   dueChildCount,
+  parentBlockInfo,
 }: LineByLineViewProps) => {
-  const { blockInfo } = useBlockInfo({ refUid: currentCardRefUid });
 
   return (
     <>
       <CardBlock
         refUid={currentCardRefUid}
         showAnswers={true}
-        breadcrumbs={blockInfo.breadcrumbs}
+        breadcrumbs={parentBlockInfo.breadcrumbs}
         showBreadcrumbs={showBreadcrumbs}
         onRenderComplete={NOOP}
         hideChildren={true}

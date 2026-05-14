@@ -25,7 +25,6 @@ import {
   ALGORITHM_META,
 } from '~/models/session';
 import { MainContext } from '~/components/overlay/PracticeOverlay';
-import { useAlgorithmContext } from '~/hooks/useAlgorithmContext';
 import { colors } from '~/theme';
 import { ControlButton } from './ControlButton';
 import { AlgorithmSelector, InteractionSelector } from './FooterSelectors';
@@ -66,9 +65,9 @@ const Footer = ({
     lineByLineIsCardComplete,
     onLineByLinePrev,
     onLineByLineNext,
+    algorithm: algorithmFromSession,
+    interaction: interactionFromSession,
   } = React.useContext(MainContext);
-  const { algorithm: algorithmFromSession, interaction: interactionFromSession } =
-    useAlgorithmContext();
 
   const noCardDisplayed = !currentCardData;
 
@@ -226,8 +225,9 @@ const Footer = ({
   const { handleKeyDown, handleKeyUp } = Blueprint.useHotkeys(hotkeys);
 
   const intervalEstimates: IntervalEstimates = React.useMemo(() => {
-    const dataForEstimates = baseCardData || currentCardData;
-    if (!dataForEstimates) return;
+    // New cards have no session yet — fall back to empty base so generatePracticeData
+    // computes default first-interval estimates from algorithm defaults (|| fallbacks).
+    const dataForEstimates = baseCardData || currentCardData || {};
 
     const effectiveAlgorithm = currentChildAlgorithm || algorithmFromSession;
     if (!effectiveAlgorithm) {
@@ -235,13 +235,6 @@ const Footer = ({
       return;
     }
     const grades = [0, 1, 2, 3, 4, 5];
-    const {
-      sm2_interval,
-      sm2_repetitions,
-      sm2_eFactor,
-      progressive_repetitions,
-      progressive_interval,
-    } = dataForEstimates;
     const estimates = {};
 
     const iterateCount = !isGradingAlgorithm(effectiveAlgorithm) ? 1 : grades.length;
@@ -249,22 +242,30 @@ const Footer = ({
       const grade = grades[i];
       const practiceResultData = generatePracticeData({
         sm2_grade: grade,
-        sm2_interval,
-        sm2_repetitions,
-        sm2_eFactor,
+        sm2_interval: dataForEstimates.sm2_interval,
+        sm2_repetitions: dataForEstimates.sm2_repetitions,
+        sm2_eFactor: dataForEstimates.sm2_eFactor,
         dateCreated: new Date(),
         algorithm: effectiveAlgorithm,
         interaction: interactionFromSession || InteractionStyle.NORMAL,
         ...(isFixedTimeAlgorithm(effectiveAlgorithm) && { fixed_multiplier, fixed_unit }),
-        progressive_repetitions,
-        progressive_interval,
+        progressive_repetitions: dataForEstimates.progressive_repetitions,
+        progressive_interval: dataForEstimates.progressive_interval,
       });
       estimates[grade] = practiceResultData;
     }
     return estimates;
   }, [
-    baseCardData,
-    currentCardData,
+    baseCardData?.sm2_interval,
+    baseCardData?.sm2_repetitions,
+    baseCardData?.sm2_eFactor,
+    baseCardData?.progressive_repetitions,
+    baseCardData?.progressive_interval,
+    currentCardData?.sm2_interval,
+    currentCardData?.sm2_repetitions,
+    currentCardData?.sm2_eFactor,
+    currentCardData?.progressive_repetitions,
+    currentCardData?.progressive_interval,
     fixed_multiplier,
     fixed_unit,
     algorithmFromSession,
@@ -553,10 +554,16 @@ const GradingControlsWrapper = ({
   toggleIntervalEditorOpen,
   onPrevClick,
 }) => {
-  const { algorithm, interaction, onSelectAlgorithm, onSelectInteraction } = useAlgorithmContext();
-
-  const { isLineByLine, onLineByLinePrev, onLineByLineNext, currentChildAlgorithm } =
-    React.useContext(MainContext);
+  const {
+    algorithm,
+    interaction,
+    onSelectAlgorithm,
+    onSelectInteraction,
+    isLineByLine,
+    onLineByLinePrev,
+    onLineByLineNext,
+    currentChildAlgorithm,
+  } = React.useContext(MainContext);
   const effectiveAlgorithm = isLineByLine ? currentChildAlgorithm : algorithm;
   const isAutoAdvanceMode = !isGradingAlgorithm(effectiveAlgorithm);
   const effectiveInteraction = interaction;

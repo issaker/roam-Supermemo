@@ -1,26 +1,3 @@
-/**
- * PracticeOverlay Component
- *
- * Main review interface — displays cards one at a time and handles grading.
- *
- * Architecture:
- * - Receives practice data, settings, and callbacks as props from App
- * - useReviewRuntime provides unified facts store, view state, selectors, and actions
- * - useCurrentCardData derives card meta from the session history (no polling)
- * - MainContext provides shared state (algorithm, interaction, fixed_multiplier/fixed_unit editor state, etc.) to child components
- * - Footer handles grading buttons and keyboard shortcuts
- * - CardBlock renders the actual Roam block content
- *
- * Runtime architecture:
- * - reviewUnit and updateReviewConfigAction go through unified runtime actions
- * - Undo is a CARD operation (undoCardSession in queries/save.ts), not a queue operation
- * - This component is a container that wires runtime actions to UI callbacks
- *
- * Settings flow:
- * - All settings come from useSettings via App props (single source of truth)
- * - updateSetting is used to change settings, which handles extensionAPI + debounced page sync
- * - Settings dialog uses formSettings for responsive form state, commits via updateSetting
- */
 import * as React from 'react';
 import * as Blueprint from '@blueprintjs/core';
 import styled from '@emotion/styled';
@@ -51,31 +28,24 @@ import {
 import useLineByLineReview from '~/hooks/useLineByLineReview';
 import usePracticeOverlayHotkeys from '~/hooks/usePracticeOverlayHotkeys';
 import useBlockInfo from '~/hooks/useBlockInfo';
-import useCurrentCardData from '~/hooks/useCurrentCardData';
 import useCardBlock from '~/hooks/useCardBlock';
 import { generateNewSession } from '~/queries';
-import { undoCardSession } from '~/queries/save';
 
 import { RenderMode } from '~/models/practice';
 import { colors, getAlgorithmColor } from '~/theme';
-import { usePracticeSession, PracticeSessionContext } from '~/contexts/PracticeSessionContext';
-import { AlgorithmProvider } from '~/contexts/AlgorithmContext';
-import { useReviewRuntime } from '~/review-runtime/useReviewRuntime';
-import { deriveChildSessionMap } from '~/review-runtime/selectors';
+import { useReviewStore } from '~/review-runtime/store/context';
+import {
+  selectCurrentCardRefUid,
+  selectCurrentCardData,
+  selectCardMeta,
+  selectAlgorithm,
+  selectInteraction,
+  selectCardQueueLength,
+  selectCompletedCount,
+  selectRenderMode,
+  deriveChildSessionMap,
+} from '~/review-runtime/store/selectors';
 
-/**
- * MainContext: shared state for the review overlay.
- *
- * Dual-queue architecture:
- * - Primary queue: ◀/▶ navigate between cards
- * - Secondary queue (LBL): ▲/▼ navigate between child blocks
- * - onLineByLinePrev/onLineByLineNext are only available when isLineByLine is true
- * - Interaction mode (Normal/LBL) is a parent-level property only; InteractionSelector always shows parent's interaction
- *
- * Maintenance rule:
- * Index-based props in this context are derived from uid-based runtime state
- * for UI compatibility. Do not expand them into new sources of truth.
- */
 interface MainContextProps {
   fixed_multiplier: number;
   setFixed_multiplier: (_multiplier: number) => void;
@@ -95,13 +65,14 @@ interface MainContextProps {
   lineByLineIsCardComplete: boolean;
   onLineByLinePrev: (() => void) | undefined;
   onLineByLineNext: (() => void) | undefined;
+  algorithm: SchedulingAlgorithm;
+  interaction: InteractionStyle;
+  onSelectAlgorithm: (_algorithm: SchedulingAlgorithm) => void;
+  onSelectInteraction: (_interaction: InteractionStyle) => void;
 }
 
-// Stable reference: prevent inline functions from invalidating React.memo
 const NOOP = () => {};
 
-// CSS animation keeps the completion state lightweight; shipping lottie-web for
-// a single terminal-state illustration adds a large bundle cost for little gain.
 const DoneIllustration = () => (
   <DoneIllustrationWrap aria-hidden="true">
     <DoneIllustrationHalo />
@@ -133,20 +104,8 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     onCloseCallback();
   }, [onCloseCallback]);
 
-  const sessionContext = usePracticeSession();
-  const {
-    settings,
-    practiceData,
-    tagCardSets,
-    selectedTag,
-    isCramming,
-    setIsCramming,
-    handleMemoTagChange,
-    dataPageTitle,
-    updateSetting,
-    fetchPracticeData,
-  } = sessionContext;
-
+  const { state, dispatch, actions } = useReviewStore();
+  const { facts, viewState, selectedTag, tagCardSets, settings, dataPageTitle } = state;
   const {
     rtlEnabled,
     forgotReinsertOffset,
@@ -154,71 +113,50 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     showBreadcrumbs,
     showModeBorders,
   } = settings;
-  const runtime = useReviewRuntime({
-    practiceData,
-    tagCardSets,
-    selectedTag,
-    isCramming,
-    dataPageTitle,
-  });
+
   const {
-    facts,
-    viewState,
-    renderMode,
-    completedCount,
-    currentPrimaryEntryId,
     currentCardRefUid,
-    currentIndex,
-    cardQueueLength,
-    focusPrimaryByOffset,
-    setFocusedPrimaryUid,
-    setFocusedChildUid,
-    resetChildViewState,
-    setMaxVisitedChildIndex,
-    resetToFirstUnpracticed,
-    navigateToNextUnpracticed,
-    ensureLatestSessions,
-    reviewUnit,
-    upsertLatestSessions,
-    updateReviewConfigAction,
-    checkDeleted,
-  } = runtime;
-
-  const prevIsOpenRef = React.useRef(false);
-  React.useEffect(() => {
-    if (isOpen && !prevIsOpenRef.current) {
-      resetToFirstUnpracticed();
-      checkDeleted();
-      setCardRefreshKey((k) => k + 1);
-    }
-    prevIsOpenRef.current = isOpen;
-  }, [isOpen, resetToFirstUnpracticed, checkDeleted]);
-
-  // 定期检测卡片删除/恢复，确保黑名单可以响应外部变更（支持撤销恢复）
-  React.useEffect(() => {
-    if (!isOpen) return;
-    const interval = setInterval(() => {
-      checkDeleted();
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [isOpen, checkDeleted]);
-
-  const effectiveRenderMode = renderMode || RenderMode.Normal;
-  const sessions = React.useMemo(() => {
-    const effectiveSession = currentCardRefUid ? facts.latestByUid[currentCardRefUid] : undefined;
-    return effectiveSession ? [effectiveSession] : [];
-  }, [currentCardRefUid, facts.latestByUid]);
-  const {
     currentCardData,
     cardMeta,
     algorithm,
     interaction,
-    latestSession,
-    applyOptimisticCardMeta,
-  } = useCurrentCardData({
-    currentCardRefUid,
-    sessions,
-  });
+    cardQueueLength,
+    completedCount,
+    renderMode,
+  } = React.useMemo(
+    () => ({
+      currentCardRefUid: selectCurrentCardRefUid(state),
+      currentCardData: selectCurrentCardData(state),
+      cardMeta: selectCardMeta(state),
+      algorithm: selectAlgorithm(state),
+      interaction: selectInteraction(state),
+      cardQueueLength: selectCardQueueLength(state),
+      completedCount: selectCompletedCount(state),
+      renderMode: selectRenderMode(state),
+    }),
+    [state]
+  );
+  const effectiveRenderMode = renderMode || RenderMode.Normal;
+
+  const prevIsOpenRef = React.useRef(false);
+  const [cardRefreshKey, setCardRefreshKey] = React.useState(0);
+
+  React.useEffect(() => {
+    if (isOpen && !prevIsOpenRef.current) {
+      dispatch({ type: 'RESET_TO_FIRST' });
+      actions.checkDeleted();
+      setCardRefreshKey((k) => k + 1);
+    }
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, dispatch, actions]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const interval = setInterval(() => {
+      actions.checkDeleted();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isOpen, actions]);
 
   const [fixed_multiplier, setFixed_multiplier] = React.useState<number>(
     isFixedTimeAlgorithm(algorithm) ? currentCardData?.fixed_multiplier || 3 : 3
@@ -229,61 +167,34 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
 
   const isDone = !currentCardRefUid;
 
-  // 集中式 showAnswer 重置触发器：任何导致卡片"刷新"的操作（undo/换算法等）
-  // 只需递增此 key，useCardBlock 内部自动清除当前卡片覆盖
-  const [cardRefreshKey, setCardRefreshKey] = React.useState(0);
-
-  // Resolve the base session for SM2/Progressive/FixedTime calculation.
-  // On same-day re-scoring, rewinds to baseSessionData (Forgot or previous day)
-  // to prevent interval inflation. See resolveBaseForCalculation in session.ts.
   const baseCardData = React.useMemo(
     () => (currentCardData ? resolveBaseForCalculation(currentCardData) : currentCardData),
     [currentCardData]
   );
 
-  // Track previous card UID so the interval state is only initialised
-  // when the card changes — not on every polling update that touches
-  // currentCardData.  This prevents the 1s poll from overwriting a
-  // user's manual fixed_multiplier selection.
   const prevCardRefUidRef = React.useRef<string | undefined>();
-
-  // Reset interval state when navigating to a different card.
-  // Uses latestSession (derived immediately from sessions via useMemo) instead
-  // of currentCardData, because currentCardData is updated asynchronously by
-  // useCurrentCardData's effect and is stale during the first render after
-  // a card change. Using stale currentCardData would copy the PREVIOUS card's
-  // fixed_multiplier into the new card, and the cardChanged guard would
-  // prevent correction on the subsequent render.
   React.useEffect(() => {
     const cardChanged = prevCardRefUidRef.current !== currentCardRefUid;
     prevCardRefUidRef.current = currentCardRefUid;
-
-    if (!latestSession) return;
-
+    if (!currentCardData) return;
     if (!cardChanged) return;
-
-    const algo = latestSession.algorithm as SchedulingAlgorithm | undefined;
-
+    const algo = currentCardData.algorithm as SchedulingAlgorithm | undefined;
     if (isFixedTimeAlgorithm(algo)) {
-      setFixed_multiplier(latestSession.fixed_multiplier || 3);
-      setFixed_unit((latestSession as any).fixed_unit || FixedTimeUnit.DAYS);
+      setFixed_multiplier(currentCardData.fixed_multiplier || 3);
+      setFixed_unit((currentCardData as any).fixed_unit || FixedTimeUnit.DAYS);
     } else {
       setFixed_multiplier(3);
       setFixed_unit(FixedTimeUnit.DAYS);
     }
-  }, [latestSession, currentCardRefUid]);
+  }, [currentCardData, currentCardRefUid]);
 
   const isNew = currentCardData && 'isNew' in currentCardData && currentCardData.isNew;
 
-  // Normal card block data — same hook used for LBL children.
-  // Parent card structural data (childrenUids, breadcrumbs) — always
-  // the X-axis entry.  Separate from activeCard below.
   const { blockInfo } = useBlockInfo({ refUid: currentCardRefUid, refreshKey: interaction });
   const hasBlockChildrenUids = !!blockInfo.childrenUids && !!blockInfo.childrenUids.length;
 
   const [showSettings, setShowSettings] = React.useState(false);
 
-  // LBL mode check: interaction is LBL and card has child blocks
   const isLBLReview = isLBLReviewMode(interaction) && hasBlockChildrenUids;
   const isLineByLineActive = isLBLReview;
 
@@ -292,24 +203,65 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     () => deriveChildSessionMap({ childUidsList, facts: facts.latestByUid }),
     [childUidsList, facts.latestByUid]
   );
-  // Fetch child sessions for the current LBL card.
-  // ensureLatestSessions merges fetched data into facts.latestByUid internally.
-  // The merge is additive (keyed by uid) so stale responses for old card's
-  // children just add harmless extra data — they don't overwrite the new card's
-  // child sessions (which have different uids).  No cancellation needed.
-  React.useEffect(() => {
-    if (!isLineByLineActive || !childUidsList.length) {
-      return;
-    }
-    ensureLatestSessions(childUidsList);
-  }, [isLineByLineActive, childUidsList, ensureLatestSessions]);
 
-  // setShowAnswers must exist before useLineByLineReview.
-  // activeCard is created after the hook — the ref bridges the gap.
+  React.useEffect(() => {
+    if (!isLineByLineActive || !childUidsList.length) return;
+    actions.ensureLatestSessions(childUidsList);
+  }, [isLineByLineActive, childUidsList, actions]);
+
   const activeSetShowAnswersRef = React.useRef<(show: boolean) => void>(() => {});
   const setShowAnswers = React.useCallback((show: boolean) => {
     activeSetShowAnswersRef.current(show);
   }, []);
+
+  const setFocusedChildUid = React.useCallback(
+    (uid?: string) => dispatch({ type: 'SET_FOCUSED_CHILD', childUid: uid }),
+    [dispatch]
+  );
+  const setMaxVisitedChildIndex = React.useCallback(
+    (index: number) => dispatch({ type: 'SET_MAX_VISITED_CHILD_INDEX', index }),
+    [dispatch]
+  );
+  const resetChildViewState = React.useCallback(
+    () => dispatch({ type: 'RESET_CHILD_VIEW' }),
+    [dispatch]
+  );
+  const focusPrimaryByOffset = React.useCallback(
+    (offset: number) => dispatch({ type: 'FOCUS_BY_OFFSET', offset }),
+    [dispatch]
+  );
+  const setFocusedPrimaryUid = React.useCallback(
+    (uid: string) => dispatch({ type: 'FOCUS_TO_UID', uid }),
+    [dispatch]
+  );
+  const resetToFirstUnpracticed = React.useCallback(
+    () => dispatch({ type: 'RESET_TO_FIRST' }),
+    [dispatch]
+  );
+  const navigateToNextUnpracticed = React.useCallback(
+    () => dispatch({ type: 'NAVIGATE_NEXT_UNPRACTICED' }),
+    [dispatch]
+  );
+
+  const lblReviewUnit = React.useCallback(
+    (args) => {
+      return actions.gradeCard({
+        targetUid: args.targetUid,
+        grade: args.grade,
+        algorithm: args.algorithm,
+        interaction: args.interaction,
+        isChild: true,
+        parentUid: args.parentUid,
+        childUidsList: args.childUidsList,
+        childSessionData: args.childSessionData,
+        currentChildIsLblNext: args.currentChildIsLblNext,
+        lineByLineCurrentChildIndex: args.lineByLineCurrentChildIndex,
+        forgotReinsertOffset: args.forgotReinsertOffset,
+        lblNextReinsertOffset: args.lblNextReinsertOffset,
+      });
+    },
+    [actions]
+  );
 
   const {
     lineByLineRevealedCount,
@@ -331,21 +283,17 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     setFocusedChildUid,
     setMaxVisitedChildIndex,
     childSessionData,
-    reviewUnit,
+    reviewUnit: lblReviewUnit,
     forgotReinsertOffset,
     lblNextReinsertOffset,
-    currentPrimaryEntryId,
+    currentPrimaryEntryId: currentCardRefUid ? `card:${currentCardRefUid}` : undefined,
     interaction,
     setShowAnswers,
   });
 
-  // There is only ONE kind of card.  One data source.
-  // Both latestSession and childSessionData[uid] are facts.latestByUid[uid].
   const activeUid =
     isLineByLineActive && !lineByLineIsCardComplete ? currentChildUid : currentCardRefUid;
   const activeSession = activeUid ? facts.latestByUid[activeUid] : undefined;
-  // LBL children without their own session inherit the parent's algorithm
-  // so the UI shows the correct grade buttons (SM2 → Good/Hard, etc.)
   const activeCard = useCardBlock(
     activeUid,
     activeSession,
@@ -355,7 +303,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
   activeSetShowAnswersRef.current = activeCard.setShowAnswers;
   const { showAnswers } = activeCard;
 
-  // Resolve the visible learning unit once and derive all user-facing state from it.
   const currentReviewSession = React.useMemo(() => {
     if (isLineByLineActive && !lineByLineIsCardComplete) {
       return currentChildUid ? childSessionData[currentChildUid] : undefined;
@@ -371,9 +318,6 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
 
   const reviewStatus = React.useMemo<ReviewStatus | null>(() => {
     if (!currentCardData) {
-      // 新卡片没有 session 数据时，currentCardData 为 undefined，
-      // 但该卡片已存在于 tagCardSets.newUids 中（由 deckConfigs 分类产生），
-      // 应显示 "New" 状态。直接返回 null 会导致 StatusBadge 空渲染。
       if (
         currentCardRefUid &&
         selectedTag &&
@@ -384,7 +328,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
       return null;
     }
     return getReviewStatus({
-      session: currentReviewSession,
+      session: currentReviewSession as Session | undefined,
       isNew: Boolean(!isLineByLineActive && isNew),
       now: new Date(),
     });
@@ -399,10 +343,9 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
   ]);
 
   const isLearned = React.useMemo(() => {
-    return isSessionMastered(currentReviewSession, new Date());
+    return isSessionMastered(currentReviewSession as Session | undefined, new Date());
   }, [currentReviewSession]);
 
-  // LBL mode: resolve base from child session; Normal mode: use parent's baseCardData.
   const effectiveBaseCardData = React.useMemo(() => {
     if (!isLineByLineActive) return baseCardData;
     if (!currentChildUid) return baseCardData;
@@ -422,80 +365,67 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     hasBlockChildrenUids &&
     !activeCard.showAnswers;
 
-  const onTagChange = async (tag) => {
-    handleMemoTagChange(tag);
-    setIsCramming(false);
-
+  const onTagChange = async (tag: string) => {
+    dispatch({ type: 'CHANGE_TAG', tag });
+    dispatch({ type: 'SET_CRAMMING', value: false });
     await asyncUtils.sleep(200);
-
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement?.blur();
     }
   };
 
   const onPracticeClick = React.useCallback(
-    (gradeData) => {
+    (gradeData: { sm2_grade?: number; refUid?: string }) => {
       if (isLineByLineActive && !lineByLineIsCardComplete) {
-        onLineByLineGrade(gradeData.sm2_grade);
+        onLineByLineGrade(gradeData.sm2_grade ?? 0);
         return;
       }
-
       if (isLineByLineActive && lineByLineIsCardComplete) {
         navigateToNextUnpracticed();
         return;
       }
-
       if (!currentCardRefUid) return;
 
-      void reviewUnit({
+      void actions.gradeCard({
         targetUid: currentCardRefUid,
-        grade: gradeData.sm2_grade,
+        grade: gradeData.sm2_grade!,
         algorithm,
         interaction,
+        isChild: false,
         forgotReinsertOffset,
-        currentPrimaryEntryId,
+        lblNextReinsertOffset,
         baseCardData,
         currentCardData,
         ...(isFixedTimeAlgorithm(algorithm) && { fixed_multiplier, fixed_unit }),
       });
     },
     [
-      algorithm,
-      interaction,
-      fixed_multiplier,
-      fixed_unit,
-      currentCardRefUid,
-      forgotReinsertOffset,
       isLineByLineActive,
       lineByLineIsCardComplete,
       onLineByLineGrade,
-      currentPrimaryEntryId,
+      navigateToNextUnpracticed,
+      currentCardRefUid,
+      actions,
+      algorithm,
+      interaction,
+      forgotReinsertOffset,
+      lblNextReinsertOffset,
       baseCardData,
       currentCardData,
-      navigateToNextUnpracticed,
-      reviewUnit,
+      fixed_multiplier,
+      fixed_unit,
     ]
   );
 
-  const onNextClick = React.useCallback(() => {
-    focusPrimaryByOffset(1);
-  }, [focusPrimaryByOffset]);
+  const onNextClick = React.useCallback(() => focusPrimaryByOffset(1), [focusPrimaryByOffset]);
+  const onPrevClick = React.useCallback(() => focusPrimaryByOffset(-1), [focusPrimaryByOffset]);
 
-  const onPrevClick = React.useCallback(() => {
-    focusPrimaryByOffset(-1);
-  }, [focusPrimaryByOffset]);
-
-  const onStartCrammingClick = () => {
-    setIsCramming(true);
-    setFocusedPrimaryUid(undefined);
+  const onStartCrammingClick = React.useCallback(() => {
+    dispatch({ type: 'SET_CRAMMING', value: true });
+    setFocusedPrimaryUid('');
     resetChildViewState();
-  };
+  }, [dispatch, setFocusedPrimaryUid, resetChildViewState]);
 
-  // Undo is a CARD operation, not a queue operation.
-  // Per architecture: "Card is the atom. It does not know which queue
-  // it sits in."  undoCardSession only touches Roam data blocks.
-  // upsertLatestSessions then syncs the rolled-back session into facts.
-  // Queue and currentIndex are never touched.
   const onUndoLearning = React.useCallback(async () => {
     if (!currentCardRefUid) return;
     const undoRefUid =
@@ -504,15 +434,11 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
         : currentCardRefUid;
     if (!undoRefUid) return;
 
-    const freshData = await undoCardSession({
+    await actions.undoCard({
       targetUid: undoRefUid,
       parentUid: isLineByLineActive && !lineByLineIsCardComplete ? currentCardRefUid : undefined,
       childUidsList: isLineByLineActive ? childUidsList : undefined,
-      dataPageTitle,
     });
-    if (Object.keys(freshData).length) {
-      upsertLatestSessions(freshData);
-    }
     setCardRefreshKey((k) => k + 1);
   }, [
     currentCardRefUid,
@@ -520,52 +446,40 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     lineByLineIsCardComplete,
     childUidsList,
     lineByLineCurrentChildIndex,
-    dataPageTitle,
-    upsertLatestSessions,
+    actions,
   ]);
 
   const toggleBreadcrumbs = React.useCallback(() => {
-    updateSetting('showBreadcrumbs', !showBreadcrumbs);
-  }, [showBreadcrumbs, updateSetting]);
+    const newShow = !state.settings.showBreadcrumbs;
+    dispatch({ type: 'UPDATE_SETTINGS', settings: { showBreadcrumbs: newShow } });
+  }, [state.settings.showBreadcrumbs, dispatch]);
 
   const handleApplyAndClose = React.useCallback(
     (formSettings: import('~/components/SettingsForm').SettingsFormSettings) => {
-      (
-        Object.keys(
-          formSettings
-        ) as (keyof import('~/components/SettingsForm').SettingsFormSettings)[]
-      ).forEach((key) => {
-        updateSetting(key, formSettings[key]);
+      dispatch({
+        type: 'UPDATE_SETTINGS',
+        settings: formSettings as Partial<typeof state.settings>,
       });
       setShowSettings(false);
       resetToFirstUnpracticed();
-      fetchPracticeData();
     },
-    [updateSetting, resetToFirstUnpracticed, fetchPracticeData]
+    [dispatch, resetToFirstUnpracticed]
   );
 
   usePracticeOverlayHotkeys({ onToggleBreadcrumbs: toggleBreadcrumbs });
 
-  // Detect editing state and adjust bottom spacing
   const [isEditing, setIsEditing] = React.useState(false);
   const isMountedRef = React.useRef(true);
 
   React.useEffect(() => {
     if (!isOpen) return;
-
     const handleFocusIn = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
-      // Check if the focused element is an input/textarea
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-        setIsEditing(true);
-      }
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') setIsEditing(true);
     };
-
     const handleFocusOut = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-        // Small delay to check if another input gets focus
-        // Unmount guard: prevent state updates after component unmount
         setTimeout(() => {
           if (!isMountedRef.current) return;
           const activeElement = document.activeElement;
@@ -578,10 +492,8 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
         }, 100);
       }
     };
-
     document.addEventListener('focusin', handleFocusIn);
     document.addEventListener('focusout', handleFocusOut);
-
     return () => {
       isMountedRef.current = false;
       document.removeEventListener('focusin', handleFocusIn);
@@ -592,77 +504,50 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
   const onSelectAlgorithm = React.useCallback(
     async (newAlgorithm: SchedulingAlgorithm) => {
       if (!currentCardRefUid) return;
-
       if (isLineByLineActive && !lineByLineIsCardComplete) {
         const childUid = childUidsList[lineByLineCurrentChildIndex];
         if (!childUid) return;
-
-        await updateReviewConfigAction({
+        await actions.changeConfig({
           targetUid: childUid,
           isChild: true,
           algorithm: newAlgorithm,
-          interaction,
           childSessionData,
-          applyOptimisticCardMeta,
-          cardMeta,
         });
         setCardRefreshKey((k) => k + 1);
         return;
       }
-
-      if (!interaction) throw new Error('interaction is undefined in onSelectAlgorithm');
-
-      await updateReviewConfigAction({
+      await actions.changeConfig({
         targetUid: currentCardRefUid,
         isChild: false,
         algorithm: newAlgorithm,
         interaction,
-        applyOptimisticCardMeta,
-        cardMeta,
       });
     },
     [
       currentCardRefUid,
-      cardMeta,
-      applyOptimisticCardMeta,
-      interaction,
       isLineByLineActive,
       lineByLineIsCardComplete,
       childUidsList,
       lineByLineCurrentChildIndex,
       childSessionData,
-      updateReviewConfigAction,
+      interaction,
+      actions,
     ]
   );
 
   const onSelectInteraction = React.useCallback(
     async (newInteraction: InteractionStyle) => {
       if (!currentCardRefUid) return;
-      if (!algorithm) throw new Error('algorithm is undefined in onSelectInteraction');
-
-      await updateReviewConfigAction({
+      await actions.changeConfig({
         targetUid: currentCardRefUid,
         isChild: false,
         algorithm,
         interaction: newInteraction,
-        applyOptimisticCardMeta,
-        cardMeta,
       });
     },
-    [currentCardRefUid, cardMeta, applyOptimisticCardMeta, algorithm, updateReviewConfigAction]
+    [currentCardRefUid, algorithm, actions]
   );
 
-  const algorithmContextValue = React.useMemo(
-    () => ({
-      algorithm,
-      interaction,
-      onSelectAlgorithm,
-      onSelectInteraction,
-    }),
-    [algorithm, interaction, onSelectAlgorithm, onSelectInteraction]
-  );
-
-  // useMemo: stable reference to prevent unnecessary re-renders in MainContext consumers
   const mainContextValue = React.useMemo(
     () => ({
       fixed_multiplier,
@@ -670,7 +555,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
       fixed_unit,
       setFixed_unit,
       onPracticeClick,
-      currentIndex,
+      currentIndex: viewState.currentIndex,
       renderMode: effectiveRenderMode,
       isLineByLine: isLineByLineActive,
       lineByLineCurrentIndex: isLineByLineActive ? lineByLineCurrentChildIndex + 1 : 0,
@@ -683,6 +568,10 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
       lineByLineIsCardComplete: isLineByLineActive ? lineByLineIsCardComplete : false,
       onLineByLinePrev: isLineByLineActive ? onLineByLinePrev : undefined,
       onLineByLineNext: isLineByLineActive ? onLineByLineNext : undefined,
+      algorithm,
+      interaction,
+      onSelectAlgorithm,
+      onSelectInteraction,
     }),
     [
       fixed_multiplier,
@@ -690,7 +579,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
       fixed_unit,
       setFixed_unit,
       onPracticeClick,
-      currentIndex,
+      viewState.currentIndex,
       effectiveRenderMode,
       isLineByLineActive,
       lineByLineCurrentChildIndex,
@@ -703,6 +592,10 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
       lineByLineIsCardComplete,
       onLineByLinePrev,
       onLineByLineNext,
+      algorithm,
+      interaction,
+      onSelectAlgorithm,
+      onSelectInteraction,
     ]
   );
 
@@ -711,119 +604,111 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
   }
 
   return (
-    <PracticeSessionContext.Provider value={sessionContext}>
-      <AlgorithmProvider {...algorithmContextValue}>
-        <MainContext.Provider value={mainContextValue}>
-          <style>{MOBILE_OVERLAY_STYLES}</style>
-          <Dialog
-            $isEditing={isEditing}
-            $algorithm={isLineByLineActive ? activeCard.algorithm : algorithm}
-            $showModeBorders={showModeBorders}
-            isOpen={isOpen}
-            onClose={handleClose}
-            className="pb-0"
-            canEscapeKeyClose={true}
-          >
-            <Header
-              className="bp3-dialog-header outline-none focus:outline-none focus-visible:outline-none"
-              onCloseCallback={handleClose}
-              onTagChange={onTagChange}
-              status={reviewStatus}
-              isDone={isDone}
-              nextDueDate={currentReviewSession?.nextDueDate}
-              onToggleBreadcrumbs={toggleBreadcrumbs}
-              onSettingsClick={() => setShowSettings(true)}
-            />
+    <MainContext.Provider value={mainContextValue}>
+      <style>{MOBILE_OVERLAY_STYLES}</style>
+      <Dialog
+        $isEditing={isEditing}
+        $algorithm={isLineByLineActive ? activeCard.algorithm : algorithm}
+        $showModeBorders={showModeBorders}
+        isOpen={isOpen}
+        onClose={handleClose}
+        className="pb-0"
+        canEscapeKeyClose={true}
+      >
+        <Header
+          className="bp3-dialog-header outline-none focus:outline-none focus-visible:outline-none"
+          onCloseCallback={handleClose}
+          onTagChange={onTagChange}
+          status={reviewStatus}
+          isDone={isDone}
+          nextDueDate={(currentReviewSession as Session | undefined)?.nextDueDate}
+          onToggleBreadcrumbs={toggleBreadcrumbs}
+          onSettingsClick={() => setShowSettings(true)}
+        />
 
-            <DialogBody
-              className="bp3-dialog-body overflow-y-scroll m-0 pt-6 pb-8 px-4"
-              dir={rtlEnabled ? 'rtl' : undefined}
-            >
-              {currentCardRefUid ? (
-                <>
-                  {isLineByLineActive ? (
-                    <LineByLineView
-                      currentCardRefUid={currentCardRefUid}
-                      childUidsList={childUidsList}
-                      lineByLineRevealedCount={lineByLineRevealedCount}
-                      lineByLineCurrentChildIndex={lineByLineCurrentChildIndex}
-                      childSessionData={childSessionData}
-                      showBreadcrumbs={showBreadcrumbs}
-                      showAnswers={showAnswers}
-                      currentChildAlgorithm={activeCard.algorithm}
-                      dueChildCount={dueChildCount}
-                    />
-                  ) : shouldShowAnswerFirst ? (
-                    blockInfo.childrenUids?.map((uid) => (
-                      <CardBlock
-                        key={uid}
-                        refUid={uid}
-                        showAnswers={showAnswers}
-                        breadcrumbs={blockInfo.breadcrumbs}
-                        showBreadcrumbs={false}
-                        onRenderComplete={NOOP}
-                      />
-                    ))
-                  ) : (
-                    <CardBlock
-                      refUid={currentCardRefUid}
-                      showAnswers={showAnswers}
-                      breadcrumbs={blockInfo.breadcrumbs}
-                      showBreadcrumbs={showBreadcrumbs}
-                      onRenderComplete={NOOP}
-                    />
-                  )}
-                </>
+        <DialogBody
+          className="bp3-dialog-body overflow-y-scroll m-0 pt-6 pb-8 px-4"
+          dir={rtlEnabled ? 'rtl' : undefined}
+        >
+          {currentCardRefUid ? (
+            <>
+              {isLineByLineActive ? (
+                <LineByLineView
+                  currentCardRefUid={currentCardRefUid}
+                  childUidsList={childUidsList}
+                  lineByLineRevealedCount={lineByLineRevealedCount}
+                  lineByLineCurrentChildIndex={lineByLineCurrentChildIndex}
+                  childSessionData={childSessionData}
+                  showBreadcrumbs={showBreadcrumbs}
+                  showAnswers={showAnswers}
+                  currentChildAlgorithm={activeCard.algorithm}
+                  dueChildCount={dueChildCount}
+                  parentBlockInfo={blockInfo}
+                />
+              ) : shouldShowAnswerFirst ? (
+                blockInfo.childrenUids?.map((uid) => (
+                  <CardBlock
+                    key={uid}
+                    refUid={uid}
+                    showAnswers={showAnswers}
+                    breadcrumbs={blockInfo.breadcrumbs}
+                    showBreadcrumbs={false}
+                    onRenderComplete={NOOP}
+                  />
+                ))
               ) : (
-                <div
-                  data-testid="practice-overlay-done-state"
-                  className="flex items-center flex-col"
-                >
-                  <DoneIllustration />
-                  <div>
-                    You&apos;re all caught up! 🌟{' '}
-                    {completedCount > 0
-                      ? `Reviewed ${completedCount} ${stringUtils.pluralize(
-                          completedCount,
-                          'card',
-                          'cards'
-                        )} today.`
-                      : ''}
-                  </div>
-                </div>
+                <CardBlock
+                  refUid={currentCardRefUid}
+                  showAnswers={showAnswers}
+                  breadcrumbs={blockInfo.breadcrumbs}
+                  showBreadcrumbs={showBreadcrumbs}
+                  onRenderComplete={NOOP}
+                />
               )}
-            </DialogBody>
-            {/* LBL showAnswers unified: internal showAnswers state controls both CardBlock and Footer.
-            lineByLineRevealedCount only controls LineByLineView row rendering range. */}
-            <Footer
-              refUid={currentCardRefUid}
-              onPracticeClick={onPracticeClick}
-              onNextClick={onNextClick}
-              onPrevClick={onPrevClick}
-              setShowAnswers={
-                isLineByLineActive && !lineByLineIsCardComplete
-                  ? onLineByLineShowAnswer
-                  : setShowAnswers
-              }
-              showAnswers={showAnswers}
-              onCloseCallback={handleClose}
-              currentCardData={currentCardData}
-              onStartCrammingClick={onStartCrammingClick}
-              isLearned={isLearned}
-              onUndoLearning={onUndoLearning}
-            />
-          </Dialog>
+            </>
+          ) : (
+            <div data-testid="practice-overlay-done-state" className="flex items-center flex-col">
+              <DoneIllustration />
+              <div>
+                You&apos;re all caught up! 🌟{' '}
+                {completedCount > 0
+                  ? `Reviewed ${completedCount} ${stringUtils.pluralize(
+                      completedCount,
+                      'card',
+                      'cards'
+                    )} today.`
+                  : ''}
+              </div>
+            </div>
+          )}
+        </DialogBody>
+        <Footer
+          refUid={currentCardRefUid}
+          onPracticeClick={onPracticeClick}
+          onNextClick={onNextClick}
+          onPrevClick={onPrevClick}
+          setShowAnswers={
+            isLineByLineActive && !lineByLineIsCardComplete
+              ? onLineByLineShowAnswer
+              : setShowAnswers
+          }
+          showAnswers={showAnswers}
+          onCloseCallback={handleClose}
+          currentCardData={currentCardData}
+          onStartCrammingClick={onStartCrammingClick}
+          isLearned={isLearned}
+          onUndoLearning={onUndoLearning}
+        />
+      </Dialog>
 
-          <SettingsDialog
-            isOpen={showSettings}
-            onClose={() => setShowSettings(false)}
-            settings={settings}
-            onApplyAndClose={handleApplyAndClose}
-            dataPageTitle={dataPageTitle}
-          />
-        </MainContext.Provider>
-      </AlgorithmProvider>
-    </PracticeSessionContext.Provider>
+      <SettingsDialog
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        settings={settings}
+        onApplyAndClose={handleApplyAndClose}
+        dataPageTitle={dataPageTitle}
+      />
+    </MainContext.Provider>
   );
 };
 
@@ -849,34 +734,28 @@ const Dialog = styled(Blueprint.Dialog)<{
     width: 70vw;
   }
 
-  /* Full-screen on mobile */
   @media (max-width: 768px) {
     max-height: 100dvh;
     width: 100vw;
     height: 100dvh;
     margin: 0;
     border-radius: 0;
-    /* Adapt to browser bottom toolbar using safe-area-inset-bottom */
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 `;
 
-// Static CSS constant: independent of component state, avoids regeneration on every render
 const MOBILE_OVERLAY_STYLES = `
   @media (max-width: 768px) {
-    /* Mobile: Make backdrop transparent and clickable-through */
     .bp3-overlay.bp3-overlay-open > .bp3-overlay-backdrop {
       opacity: 0 !important;
       background: transparent !important;
       pointer-events: none !important;
     }
 
-    /* Overlay itself doesn't block clicks */
     .bp3-overlay.bp3-overlay-open {
       pointer-events: none !important;
     }
 
-    /* Dialog content remains interactive */
     .bp3-overlay.bp3-overlay-open .bp3-dialog-container,
     .bp3-overlay.bp3-overlay-open .bp3-dialog,
     .bp3-overlay.bp3-overlay-open [role="dialog"],
@@ -884,13 +763,11 @@ const MOBILE_OVERLAY_STYLES = `
       pointer-events: auto !important;
     }
 
-    /* Internal menus remain clickable */
     .bp3-overlay.bp3-overlay-open .bp3-popover,
     .bp3-overlay.bp3-overlay-open .bp3-popover * {
       pointer-events: auto !important;
     }
 
-    /* Full-screen positioning - must override Blueprint defaults */
     .bp3-overlay.bp3-overlay-open {
       position: fixed !important;
       top: 0 !important;

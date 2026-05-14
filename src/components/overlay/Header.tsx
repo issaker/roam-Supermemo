@@ -1,3 +1,4 @@
+import * as React from 'react';
 import * as Blueprint from '@blueprintjs/core';
 import * as BlueprintSelect from '@blueprintjs/select';
 import styled from '@emotion/styled';
@@ -12,11 +13,14 @@ import {
   InteractionStyle,
   getAlgorithmIntent,
 } from '~/models/session';
-import { MainContext } from '~/components/overlay/PracticeOverlay';
 import { colors } from '~/theme';
-import { useSafeContext } from '~/hooks/useSafeContext';
-import { usePracticeSession } from '~/contexts/PracticeSessionContext';
-import { useAlgorithmContext } from '~/hooks/useAlgorithmContext';
+import { useReviewStore } from '~/review-runtime/store/context';
+import {
+  selectAlgorithm,
+  selectInteraction,
+  selectCardQueueLength,
+  selectTagCounts,
+} from '~/review-runtime/store/selectors';
 
 interface HeaderProps {
   onCloseCallback: () => void;
@@ -96,62 +100,74 @@ const Tag = styled(Blueprint.Tag)`
   }
 `;
 
-const TagSelectorItem = ({ text, onClick, active, tagsList }) => {
-  const { tagCardSets } = usePracticeSession();
-  const dueCount = tagCardSets[text]?.dueUids.length ?? 0;
-  const newCount = tagCardSets[text]?.newUids.length ?? 0;
+const TagSelectorItem = React.memo(
+  ({
+    text,
+    onClick,
+    active,
+    tagsList,
+  }: {
+    text: string;
+    onClick: React.MouseEventHandler;
+    active: boolean;
+    tagsList: string[];
+  }) => {
+    const { state } = useReviewStore();
+    const { dueCount, newCount } = React.useMemo(() => selectTagCounts(state, text), [state, text]);
 
-  const index = tagsList.indexOf(text);
-  const placement = index === tagsList.length - 1 ? 'bottom' : 'top';
+    const index = tagsList.indexOf(text);
+    const placement = index === tagsList.length - 1 ? 'bottom' : 'top';
 
-  return (
-    <TagSelectorItemWrapper
-      onClick={onClick}
-      active={active}
-      key={text}
-      tabIndex={-1}
-      data-testid="tag-selector-item"
-      className="flex-col"
-    >
-      <div className="flex">
-        <div className="flex items-center">
-          {text === 'DailyNote' && (
-            <Blueprint.Icon icon="calendar" size={11} style={{ marginRight: '4px' }} />
-          )}
-          {text}
+    return (
+      <TagSelectorItemWrapper
+        onClick={onClick}
+        active={active}
+        key={text}
+        tabIndex={-1}
+        data-testid="tag-selector-item"
+        className="flex-col"
+      >
+        <div className="flex">
+          <div className="flex items-center">
+            {text === 'DailyNote' && (
+              <Blueprint.Icon icon="calendar" size={11} style={{ marginRight: '4px' }} />
+            )}
+            {text}
+          </div>
+          <div className="ml-2">
+            {dueCount > 0 && (
+              <Tooltip content="Due" placement={placement}>
+                <Tag
+                  active
+                  minimal
+                  intent="primary"
+                  className="text-center"
+                  data-testid="tag-selector-due"
+                >
+                  {dueCount}
+                </Tag>
+              </Tooltip>
+            )}
+            {newCount > 0 && (
+              <Tooltip content="New" placement={placement}>
+                <Tag
+                  active
+                  minimal
+                  intent="success"
+                  className="text-center ml-2"
+                  data-testid="tag-selector-new"
+                >
+                  {newCount}
+                </Tag>
+              </Tooltip>
+            )}
+          </div>
         </div>
-        <div className="ml-2">
-          {dueCount > 0 && (
-            <Tooltip content="Due" placement={placement}>
-              <Tag
-                active
-                minimal
-                intent="primary"
-                className="text-center"
-                data-testid="tag-selector-due"
-              >
-                {dueCount}
-              </Tag>
-            </Tooltip>
-          )}
-          {newCount > 0 && (
-            <Tooltip content="New" placement={placement}>
-              <Tag
-                active
-                minimal
-                intent="success"
-                className="text-center ml-2"
-                data-testid="tag-selector-new"
-              >
-                {newCount}
-              </Tag>
-            </Tooltip>
-          )}
-        </div>
-      </div>
-    </TagSelectorItemWrapper>
-  );
-};
+      </TagSelectorItemWrapper>
+    );
+  }
+);
+TagSelectorItem.displayName = 'TagSelectorItem';
 
 const StatusBadge = ({ status, nextDueDate, isCramming }) => {
   if (isCramming) {
@@ -246,10 +262,18 @@ const Header = ({
   onToggleBreadcrumbs,
   onSettingsClick,
 }: HeaderProps) => {
-  const { selectedTag, tagsList, isCramming, settings } = usePracticeSession();
-  const { algorithm, interaction } = useAlgorithmContext();
+  const { state } = useReviewStore();
+  const { selectedTag, tagsList, isCramming, settings, viewState } = state;
   const { showBreadcrumbs } = settings;
-  const { currentIndex, cardQueueLength } = useSafeContext(MainContext);
+  const { algorithm, interaction, cardQueueLength } = React.useMemo(
+    () => ({
+      algorithm: selectAlgorithm(state),
+      interaction: selectInteraction(state),
+      cardQueueLength: selectCardQueueLength(state),
+    }),
+    [state]
+  );
+  const currentIndex = viewState.currentIndex;
 
   const currentDisplayCount = currentIndex + 1;
 

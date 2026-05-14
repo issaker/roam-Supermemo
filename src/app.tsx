@@ -2,7 +2,7 @@ import * as React from 'react';
 import * as Blueprint from '@blueprintjs/core';
 import PracticeOverlay from '~/components/overlay/PracticeOverlay';
 import SidePanelWidget from '~/components/SidePanelWidget';
-import { PracticeSessionProvider } from '~/contexts/PracticeSessionContext';
+import { ReviewStoreProvider } from '~/review-runtime/store/context';
 import usePracticeData from '~/hooks/usePracticeData';
 import useTags from '~/hooks/useTags';
 import useSettings from '~/hooks/useSettings';
@@ -19,7 +19,7 @@ const App = () => {
 
   const { settings, updateSetting } = useSettings();
   const { dailyLimit, deckConfigs, dataPageTitle, shuffleCards } = settings;
-  const { selectedTag, setSelectedTag, tagsList } = useTags({ deckConfigs });
+  const { selectedTag, tagsList } = useTags({ deckConfigs });
 
   const { fetchCacheData, data: cachedData } = useCachedData({ dataPageTitle });
 
@@ -111,30 +111,23 @@ const App = () => {
 
   return (
     <Blueprint.HotkeysProvider>
-      <>
-        <SidePanelWidget
-          onClickCallback={onShowPracticeOverlay}
-          tagCardSets={filteredTagCardSets}
+      <ReviewStoreProvider
+        selectedTag={selectedTag}
+        isCramming={isCramming}
+        tagCardSets={filteredTagCardSets}
+        dataPageTitle={dataPageTitle}
+        practiceData={practiceData}
+        settings={settings}
+        tagsList={tagsList}
+        fetchPracticeData={fetchPracticeData}
+        updateSetting={updateSetting}
+      >
+        <SidePanelWidget onClickCallback={onShowPracticeOverlay} />
+        <PracticeOverlay
+          isOpen={showPracticeOverlay}
+          onCloseCallback={onClosePracticeOverlayCallback}
         />
-        <PracticeSessionProvider
-          settings={settings}
-          practiceData={practiceData}
-          tagCardSets={filteredTagCardSets}
-          selectedTag={selectedTag}
-          tagsList={tagsList}
-          isCramming={isCramming}
-          setIsCramming={setIsCramming}
-          handleMemoTagChange={setSelectedTag}
-          fetchPracticeData={fetchPracticeData}
-          dataPageTitle={dataPageTitle}
-          updateSetting={updateSetting}
-        >
-          <PracticeOverlay
-            isOpen={showPracticeOverlay}
-            onCloseCallback={onClosePracticeOverlayCallback}
-          />
-        </PracticeSessionProvider>
-      </>
+      </ReviewStoreProvider>
     </Blueprint.HotkeysProvider>
   );
 };

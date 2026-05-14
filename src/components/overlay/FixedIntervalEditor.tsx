@@ -137,10 +137,6 @@ const FixedIntervalModeControls = ({
   const onInteractionhandler = (nextState) => {
     if (!nextState && isIntervalEditorOpen) toggleIntervalEditorOpen();
   };
-  if (!intervalEstimates) {
-    console.error('Interval estimates not set');
-    return <></>;
-  }
 
   return (
     <>
@@ -157,7 +153,7 @@ const FixedIntervalModeControls = ({
               algorithm={effectiveAlgorithm}
               fixed_multiplier={fixed_multiplier}
               fixed_unit={fixed_unit}
-              nextDueDate={intervalEstimates[0]?.nextDueDate}
+              nextDueDate={intervalEstimates![0]?.nextDueDate}
             />
           </span>
         </ControlButton>
@@ -177,7 +173,7 @@ const FixedIntervalModeControls = ({
                 algorithm={effectiveAlgorithm}
                 fixed_multiplier={fixed_multiplier}
                 fixed_unit={fixed_unit}
-                nextDueDate={intervalEstimates[0]?.nextDueDate}
+                nextDueDate={intervalEstimates![0]?.nextDueDate}
               />
               <ButtonTags>E</ButtonTags>
             </span>
@@ -190,7 +186,7 @@ const FixedIntervalModeControls = ({
         className="text-base font-medium py-1"
         intent="success"
         onClick={() => intervalPractice()}
-        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[0]?.nextDueDate)}`}
+        tooltipText={`Review ${formatDaysFromNow(intervalEstimates![0]?.nextDueDate)}`}
         active={activeButtonKey === 'next-button'}
         outlined
       >
@@ -203,6 +199,13 @@ const FixedIntervalModeControls = ({
   );
 };
 
+const GRADE_BUTTONS = [
+  { key: 'forgot-button', grade: 0, intent: 'danger' as const, label: 'Forgot', tag: 'F' },
+  { key: 'hard-button', grade: 2, intent: 'warning' as const, label: 'Hard', tag: 'H' },
+  { key: 'good-button', grade: 4, intent: 'primary' as const, label: 'Good', tag: 'G' },
+  { key: 'perfect-button', grade: 5, intent: 'success' as const, label: 'Perfect', tag: 'SPACE' },
+];
+
 const SpacedIntervalModeControls = ({
   activeButtonKey,
   gradeFn,
@@ -211,66 +214,25 @@ const SpacedIntervalModeControls = ({
   activeButtonKey: string;
   gradeFn: (_sm2_grade: number) => void;
   intervalEstimates: IntervalEstimates;
-}): JSX.Element => {
-  if (!intervalEstimates) {
-    console.error('Interval estimates not set');
-    return <></>;
-  }
-
-  return (
-    <>
+}): JSX.Element => (
+  <>
+    {GRADE_BUTTONS.map(({ key, grade, intent, label, tag }) => (
       <ControlButton
-        key="forget-button"
+        key={key}
         className="text-base font-medium py-1"
-        intent="danger"
-        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[0]?.nextDueDate)}`}
-        onClick={() => gradeFn(0)}
-        active={activeButtonKey === 'forgot-button'}
+        intent={intent}
+        onClick={() => gradeFn(grade)}
+        tooltipText={`Review ${formatDaysFromNow(intervalEstimates![grade]?.nextDueDate)}`}
+        active={activeButtonKey === key}
       >
-        Forgot{' '}
+        {label}{' '}
         <span className="ml-2">
-          <ButtonTags>F</ButtonTags>
+          <ButtonTags>{tag}</ButtonTags>
         </span>
       </ControlButton>
-      <ControlButton
-        className="text-base font-medium py-1"
-        intent="warning"
-        onClick={() => gradeFn(2)}
-        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[2]?.nextDueDate)}`}
-        active={activeButtonKey === 'hard-button'}
-      >
-        Hard{' '}
-        <span className="ml-2">
-          <ButtonTags>H</ButtonTags>
-        </span>
-      </ControlButton>
-      <ControlButton
-        className="text-base font-medium py-1"
-        intent="primary"
-        onClick={() => gradeFn(4)}
-        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[4]?.nextDueDate)}`}
-        active={activeButtonKey === 'good-button'}
-      >
-        Good{' '}
-        <span className="ml-2">
-          <ButtonTags>G</ButtonTags>
-        </span>
-      </ControlButton>
-      <ControlButton
-        className="text-base font-medium py-1"
-        intent="success"
-        onClick={() => gradeFn(5)}
-        tooltipText={`Review ${formatDaysFromNow(intervalEstimates[5]?.nextDueDate)}`}
-        active={activeButtonKey === 'perfect-button'}
-      >
-        Perfect{' '}
-        <span className="ml-2">
-          <ButtonTags>SPACE</ButtonTags>
-        </span>
-      </ControlButton>
-    </>
-  );
-};
+    ))}
+  </>
+);
 
 export { FixedIntervalEditor, FixedIntervalModeControls, SpacedIntervalModeControls };
 export type { IntervalEstimate, IntervalEstimates };

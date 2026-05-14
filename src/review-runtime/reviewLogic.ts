@@ -1,4 +1,4 @@
-import { RecordUid, Session, SchedulingAlgorithm, classifyCard } from '~/models/session';
+import { RecordUid, Session, SchedulingAlgorithm, classifyCard, Records } from '~/models/session';
 import { generateNewSession } from '~/queries/utils';
 import { generatePracticeData } from '~/practice';
 import { getLblQueueState } from '~/models/practice';
@@ -8,7 +8,22 @@ import {
   resolveBaseForCalculation,
 } from '~/models/session';
 import { LatestSessionRecord } from './types';
-import { CardSet } from './queue/types';
+import { CardSet } from './store/types';
+
+export const mergeSourceIntoFacts = (
+  latestByUid: Record<RecordUid, LatestSessionRecord>,
+  source: Records,
+  pendingByUid: Record<RecordUid, 'saving' | 'updatingConfig' | undefined>
+): Record<RecordUid, LatestSessionRecord> => {
+  const safeSource = { ...source };
+  for (const key of Object.keys(pendingByUid)) {
+    if (pendingByUid[key] != null) {
+      delete safeSource[key];
+    }
+  }
+  if (Object.keys(safeSource).length === 0) return latestByUid;
+  return { ...latestByUid, ...safeSource };
+};
 
 export const omitIsNew = (data: Session | undefined): Session => {
   if (!data) return {} as Session;
