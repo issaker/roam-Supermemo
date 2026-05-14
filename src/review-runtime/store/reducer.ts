@@ -4,7 +4,7 @@ import {
   resolveNextLblNavigation,
 } from '~/review-runtime/reviewLogic';
 import { ReviewState, ReviewAction, GradeCardPayload, ChangeConfigPayload } from './types';
-import { computeQueueId, computeCardSet, applyReinsert, computeTodayEnd } from './queue-logic';
+import { computeQueueId, computeCardSet, reconcileUids, hasCardsInSet, applyReinsert, computeTodayEnd } from './queue-logic';
 import { selectEffectiveQueue } from './selectors';
 import { defaultSettings } from '~/hooks/useSettings';
 
@@ -35,6 +35,28 @@ const findNextUnpracticedIndex = (
     }
   }
   return effectiveQueue.length;
+};
+
+/**
+ * Build/reconcile the queue for a specific tag and cardSet.
+ * Keeps existing queue order, appends any cardSet UIDs that are missing.
+ * Uses the provided tagCardSets (caller chooses incoming or state) and tag.
+ */
+const reconcileQueueForTag = (
+  queues: ReviewState['queues'],
+  tag: string,
+  tagCardSets: ReviewState['tagCardSets']
+): ReviewState['queues'] => {
+  const queueId = computeQueueId(tag);
+  const cardSet = computeCardSet(tagCardSets, tag);
+  if (!hasCardsInSet(cardSet)) return queues;
+  const existing = queues[queueId];
+  const { uids, removedUids } = reconcileUids(
+    existing?.uids || [],
+    existing?.removedUids || [],
+    cardSet
+  );
+  return { ...queues, [queueId]: { uids, removedUids } };
 };
 
 export const reviewReducer = (state: ReviewState, action: ReviewAction): ReviewState => {
@@ -139,6 +161,7 @@ export const reviewReducer = (state: ReviewState, action: ReviewAction): ReviewS
       return {
         ...state,
         selectedTag: action.tag,
+        queues: reconcileQueueForTag(state.queues, action.tag, state.tagCardSets),
         viewState: { currentIndex: 0, focusedChildUid: undefined, maxVisitedChildIndex: 0 },
       };
     }
@@ -153,11 +176,15 @@ export const reviewReducer = (state: ReviewState, action: ReviewAction): ReviewS
         action.practiceData,
         state.facts.pendingByUid
       );
+      const newQueues = state.selectedTag
+        ? reconcileQueueForTag(state.queues, state.selectedTag, action.tagCardSets)
+        : state.queues;
       return {
         ...state,
         tagCardSets: action.tagCardSets,
         practiceData: action.practiceData,
         facts: { ...state.facts, latestByUid: mergedLatest },
+        queues: newQueues,
       };
     }
 
@@ -273,8 +300,9 @@ const handleGradeCard = (state: ReviewState, payload: GradeCardPayload): ReviewS
           ...newQueues,
           [queueId]: applyReinsert(queue, reinsertUid, afterUid, forgotReinsertOffset),
         };
+        const newRemovedSet = new Set(newQueues[queueId].removedUids);
         const newEffectiveQueue = newQueues[queueId].uids.filter(
-          (uid) => !new Set(newQueues[queueId].removedUids).has(uid)
+          (uid) => !newRemovedSet.has(uid)
         );
         const nextIndex = findNextUnpracticedIndex(
           newEffectiveQueue,
@@ -317,8 +345,9 @@ const handleGradeCard = (state: ReviewState, payload: GradeCardPayload): ReviewS
           ...newQueues,
           [queueId]: applyReinsert(queue, parentUid!, afterUid, lblNextReinsertOffset),
         };
+        const newRemovedSet = new Set(newQueues[queueId].removedUids);
         const newEffectiveQueue = newQueues[queueId].uids.filter(
-          (uid) => !new Set(newQueues[queueId].removedUids).has(uid)
+          (uid) => !newRemovedSet.has(uid)
         );
         const nextIndex = findNextUnpracticedIndex(
           newEffectiveQueue,

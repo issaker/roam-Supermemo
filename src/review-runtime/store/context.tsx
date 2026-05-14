@@ -18,7 +18,8 @@ import { reviewReducer, initialReviewState } from './reducer';
 import {
   computeQueueId,
   computeCardSet,
-  buildInitialUids,
+  reconcileUids,
+  hasCardsInSet,
   loadPersistedQueue,
   savePersistedQueue,
   cleanStaleQueueKeys,
@@ -42,6 +43,10 @@ type ReviewStoreContextValue = {
   state: ReviewState;
   dispatch: React.Dispatch<ReviewAction>;
   actions: ReviewStoreActions;
+  updateSetting: <K extends keyof ReviewState['settings']>(
+    key: K,
+    value: ReviewState['settings'][K]
+  ) => void;
 };
 
 const ReviewStoreContext = React.createContext<ReviewStoreContextValue | undefined>(undefined);
@@ -78,7 +83,7 @@ export const ReviewStoreProvider = ({
   settings,
   tagsList,
   fetchPracticeData: _fetchPracticeData,
-  updateSetting: _updateSetting,
+  updateSetting,
 }: ReviewStoreProviderProps) => {
   const [state, dispatch] = React.useReducer(reviewReducer, initialReviewState);
   const stateRef = React.useRef(state);
@@ -110,16 +115,16 @@ export const ReviewStoreProvider = ({
 
   const queueId = computeQueueId(state.selectedTag);
   const cardSet = computeCardSet(state.tagCardSets, state.selectedTag);
-  const hasCards = cardSet.due.length + cardSet.new.length + cardSet.completed.length > 0;
+  const hasCards = hasCardsInSet(cardSet);
 
+  // Restore persisted queue on page refresh, reconciled with current cardSet.
   React.useEffect(() => {
     if (!hasCards) return;
     const persisted = loadPersistedQueue(queueId);
-    const initial = persisted || {
-      uids: buildInitialUids(cardSet),
-      removedUids: [] as RecordUid[],
-    };
-    dispatch({ type: 'QUEUE_INIT', queueId, uids: initial.uids, removedUids: initial.removedUids });
+    const { uids, removedUids } = persisted
+      ? reconcileUids(persisted.uids, persisted.removedUids, cardSet)
+      : reconcileUids([], [], cardSet);
+    dispatch({ type: 'QUEUE_INIT', queueId, uids, removedUids });
   }, [queueId, hasCards]);
 
   const cardSetFingerprint = React.useMemo(() => {
@@ -374,7 +379,10 @@ export const ReviewStoreProvider = ({
     return { gradeCard, undoCard, changeConfig, ensureLatestSessions, checkDeleted };
   }, []);
 
-  const contextValue = React.useMemo(() => ({ state, dispatch, actions }), [state, actions]);
+  const contextValue = React.useMemo(
+    () => ({ state, dispatch, actions, updateSetting }),
+    [state, actions, updateSetting]
+  );
 
   return <ReviewStoreContext.Provider value={contextValue}>{children}</ReviewStoreContext.Provider>;
 };

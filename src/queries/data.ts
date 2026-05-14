@@ -164,12 +164,15 @@ const getPageReferenceIds = async (tag: string, dataPageTitle: string): Promise<
   const dataPageResult = window.roamAlphaAPI.q(getDataPageQuery(dataPageTitle));
   const dataPageUid = dataPageResult.length ? dataPageResult[0][0] : '';
   const results = window.roamAlphaAPI.q(dataPageReferencesIdsQuery, tag, dataPageUid);
-  return results.map((arr) => arr[0]);
+  const refIds = results.map((arr) => arr[0]);
+  return refIds;
 };
 
 export const getSelectedTagPageBlocksIds = async (selectedTag: string): Promise<string[]> => {
   const queryResults = await getChildBlocksOnPage(selectedTag);
-  if (!queryResults.length) return [];
+  if (!queryResults.length) {
+    return [];
+  }
 
   const children = queryResults[0][0].children;
   const filteredChildren = children.filter((child) => !!child.string);

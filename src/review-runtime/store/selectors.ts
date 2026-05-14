@@ -8,14 +8,19 @@ import {
 } from '~/models/session';
 import { isCardCompletedToday } from '~/review-runtime/reviewLogic';
 import { ReviewState, SessionFacts, LatestSessionRecord } from './types';
-import { computeQueueId, computeCardSet, computeTodayEnd } from './queue-logic';
+import { computeQueueId, computeCardSet, computeTodayEnd, getCardSetUidSet } from './queue-logic';
 
 export const selectEffectiveQueue = (state: ReviewState): RecordUid[] => {
   const queueId = computeQueueId(state.selectedTag);
   const queue = state.queues[queueId];
   if (!queue) return [];
   const removedSet = new Set(queue.removedUids);
-  return queue.uids.filter((uid) => !removedSet.has(uid));
+  // CardSet mask: only show cards that exist in the current quota-limited
+  // cardSet. This makes dailyLimit/deckConfig changes take effect immediately
+  // on the visible queue (both expanding and shrinking).
+  const cardSet = computeCardSet(state.tagCardSets, state.selectedTag);
+  const validUids = getCardSetUidSet(cardSet);
+  return queue.uids.filter((uid) => !removedSet.has(uid) && validUids.has(uid));
 };
 
 export const selectCurrentCardRefUid = (state: ReviewState): string | undefined => {

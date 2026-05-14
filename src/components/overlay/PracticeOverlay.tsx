@@ -104,7 +104,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     onCloseCallback();
   }, [onCloseCallback]);
 
-  const { state, dispatch, actions } = useReviewStore();
+  const { state, dispatch, actions, updateSetting } = useReviewStore();
   const { facts, viewState, selectedTag, tagCardSets, settings, dataPageTitle } = state;
   const {
     rtlEnabled,
@@ -456,6 +456,11 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
 
   const handleApplyAndClose = React.useCallback(
     (formSettings: import('~/components/SettingsForm').SettingsFormSettings) => {
+      // Sync to extensionAPI + useSettings (app-level), so filteredTagCardSets
+      // in app.tsx picks up dailyLimit / deckConfigs changes and re-allocates.
+      for (const [key, value] of Object.entries(formSettings)) {
+        updateSetting(key as keyof typeof formSettings, value);
+      }
       dispatch({
         type: 'UPDATE_SETTINGS',
         settings: formSettings as Partial<typeof state.settings>,
@@ -463,7 +468,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
       setShowSettings(false);
       resetToFirstUnpracticed();
     },
-    [dispatch, resetToFirstUnpracticed]
+    [dispatch, resetToFirstUnpracticed, updateSetting]
   );
 
   usePracticeOverlayHotkeys({ onToggleBreadcrumbs: toggleBreadcrumbs });

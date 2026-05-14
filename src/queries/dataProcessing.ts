@@ -261,19 +261,17 @@ export const allocateDailyCards = ({
     result[tag] = src
       ? { ...src, dueUids: disabled ? [] : [...src.dueUids], newUids: disabled ? [] : [...src.newUids], completedUids: disabled ? [] : [...src.completedUids] }
       : { dueUids: [], newUids: [], completedUids: [], lblDeckMeta: {}, renderMode: RenderMode.Normal };
-    if (!disabled) enabled.push({ tag, weight: cfg?.weight ?? 0 });
+    // Tags without a config entry default to weight 50 (same as the
+    // default deck config weight), so they get fair quota allocation
+    // instead of being zero-capped and losing all their cards.
+    if (!disabled) enabled.push({ tag, weight: cfg?.weight ?? 50 });
   }
-
-  enabled.sort((a, b) => {
-    const d = b.weight - a.weight;
-    return d !== 0 ? d : tagsList.indexOf(a.tag) - tagsList.indexOf(b.tag);
-  });
 
   if (!enabled.length) return result;
 
   let totalAvail = 0;
   for (const { tag } of enabled) totalAvail += result[tag].dueUids.length + result[tag].newUids.length;
-  if (!totalAvail || totalAvail <= dailyLimit) return result;
+  if (!totalAvail) return result;
 
   // ── Per-deck quotas (based on TOTAL cards for stability) ──
   const totalCards: Record<string, number> = {};
@@ -291,22 +289,19 @@ export const allocateDailyCards = ({
     capSum += cap[tag];
   }
 
+  // ── Floor correction: every enabled deck with cards gets at least 1 ──
+  for (const { tag } of enabled) {
+    if (capSum >= dailyLimit) break;
+    if (cap[tag] === 0 && totalCards[tag] > 0) {
+      cap[tag] = 1;
+      capSum++;
+    }
+  }
+
+  // Distribute remaining quota up to dailyLimit, in priority order
   for (const { tag } of enabled) {
     if (capSum >= dailyLimit) break;
     cap[tag]++; capSum++;
-  }
-
-  let excess = 0;
-  for (const { tag } of enabled) {
-    if (cap[tag] > totalCards[tag]) {
-      excess += cap[tag] - totalCards[tag];
-      cap[tag] = totalCards[tag];
-    }
-  }
-  for (const { tag } of enabled) {
-    if (excess <= 0) break;
-    const room = totalCards[tag] - cap[tag];
-    if (room > 0) { const give = Math.min(room, excess); cap[tag] += give; excess -= give; }
   }
 
   // ── Remaining quota = cap - completed ──
@@ -324,59 +319,28 @@ export const allocateDailyCards = ({
     return result;
   }
 
-  // ── Round-robin allocation: due first (75%), then new (25%) ──
-  const targetNew = totalRem === 1 ? 0 : Math.max(1, Math.floor(totalRem * 0.25));
-  const targetDue = totalRem - targetNew;
-  const dueSel: Record<string, string[]> = {};
-  const newSel: Record<string, string[]> = {};
-  const picked: Record<string, number> = {};
-  for (const { tag } of enabled) { dueSel[tag] = []; newSel[tag] = []; picked[tag] = 0; }
-
-  let duePicked = 0, newPicked = 0;
-
-  for (const kind of ['due', 'new'] as const) {
-    const target = kind === 'due' ? targetDue : targetNew;
-    let counter = kind === 'due' ? duePicked : newPicked;
-    while (counter < target) {
-      let any = false;
-      for (const { tag } of enabled) {
-        if (counter >= target) break;
-        if (picked[tag] >= rem[tag]) continue;
-        const sel = kind === 'due' ? dueSel : newSel;
-        const src = kind === 'due' ? result[tag].dueUids : result[tag].newUids;
-        if (sel[tag].length < src.length) {
-          sel[tag].push(src[sel[tag].length]);
-          picked[tag]++; counter++; any = true;
-        }
-      }
-      if (!any) break;
+  // ── Priority allocation: fill decks in tagsList order ──
+  for (const { tag } of enabled) {
+    const deckQuota = Math.min(rem[tag], totalRem);
+    if (deckQuota <= 0) {
+      result[tag] = { ...result[tag], dueUids: [], newUids: [] };
+      continue;
     }
-    if (kind === 'due') duePicked = counter; else newPicked = counter;
+
+    const dueSrc = result[tag].dueUids;
+    const newSrc = result[tag].newUids;
+
+    // 75/25 due/new split: at most 25% new (at least 1 if possible)
+    const rawNew = Math.floor(deckQuota * 0.25);
+    const minNew = deckQuota === 1 ? 0 : Math.max(1, rawNew);
+    const newTarget = Math.min(minNew, newSrc.length);
+    const takeDue = Math.min(deckQuota - newTarget, dueSrc.length);
+    const takeNew = Math.min(deckQuota - takeDue, newSrc.length);
+
+    result[tag] = { ...result[tag], dueUids: dueSrc.slice(0, takeDue), newUids: newSrc.slice(0, takeNew) };
+    totalRem -= takeDue + takeNew;
   }
 
-  let totalPicked = duePicked + newPicked;
-  if (totalPicked < totalRem) {
-    for (const kind of ['due', 'new'] as const) {
-      while (totalPicked < totalRem) {
-        let any = false;
-        for (const { tag } of enabled) {
-          if (totalPicked >= totalRem) break;
-          if (picked[tag] >= rem[tag]) continue;
-          const sel = kind === 'due' ? dueSel : newSel;
-          const src = kind === 'due' ? result[tag].dueUids : result[tag].newUids;
-          if (sel[tag].length < src.length) {
-            sel[tag].push(src[sel[tag].length]);
-            picked[tag]++; totalPicked++; any = true;
-          }
-        }
-        if (!any) break;
-      }
-    }
-  }
-
-  for (const tag of tagsList) {
-    if (dueSel[tag]) result[tag] = { ...result[tag], dueUids: dueSel[tag], newUids: newSel[tag] };
-  }
   return result;
 };
 

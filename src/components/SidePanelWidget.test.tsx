@@ -502,7 +502,7 @@ describe('Side Panel Widget', () => {
 
       const newTag = screen.queryByTestId('new-tag');
       expect(newTag).toBeInTheDocument();
-      expect(newTag).toHaveTextContent('5');
+      expect(newTag).toHaveTextContent('3');
     });
 
     it('renders correct count when, limit set, one deck complete, but other deck has due and new cards', async () => {
@@ -544,11 +544,11 @@ describe('Side Panel Widget', () => {
 
       const dueTag = screen.queryByTestId('due-tag');
       expect(dueTag).toBeInTheDocument();
-      expect(dueTag).toHaveTextContent('4');
+      expect(dueTag).toHaveTextContent('1');
 
       const newTag = screen.queryByTestId('new-tag');
       expect(newTag).toBeInTheDocument();
-      expect(newTag).toHaveTextContent('1');
+      expect(newTag).toHaveTextContent('2');
     });
 
     it('renders correct count when, limit set, has completed today cards', async () => {
@@ -596,7 +596,7 @@ describe('Side Panel Widget', () => {
 
       const dueTag = screen.queryByTestId('due-tag');
       expect(dueTag).toBeInTheDocument();
-      expect(dueTag).toHaveTextContent('3');
+      expect(dueTag).toHaveTextContent('1');
 
       const newTag = screen.queryByTestId('new-tag');
       expect(newTag).toBeInTheDocument();

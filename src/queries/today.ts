@@ -99,6 +99,7 @@ export const classifyAllCards = ({
       renderMode,
       lblDeckMeta,
     };
+
   }
 
   return result;

@@ -124,7 +124,7 @@ describe('allocateDailyCards', () => {
     expect(result.memo.dueUids.length + result.memo.newUids.length).toBeGreaterThan(0);
   });
 
-  it('redistributes unused quota when a deck has fewer cards than its allocation', () => {
+  it('limits deck to its proportional cap when it has fewer cards than its allocation', () => {
     const sets = makeTagCardSets({
       small: makeTag({ dueUids: ['a'], newUids: [] }),
       large: makeTag({
@@ -147,7 +147,8 @@ describe('allocateDailyCards', () => {
     const smallTotal = result.small.dueUids.length + result.small.newUids.length;
     const largeTotal = result.large.dueUids.length + result.large.newUids.length;
     expect(smallTotal).toBe(1);
-    expect(smallTotal + largeTotal).toBe(20);
+    expect(largeTotal).toBe(10);
+    expect(smallTotal + largeTotal).toBe(11);
   });
 
   it('does not trim when total cards are fewer than dailyLimit', () => {
@@ -296,7 +297,7 @@ describe('allocateDailyCards', () => {
       expect(afterLarge).toBe(beforeLarge);
     });
 
-    it('prioritizes highest-weight deck when redistributing excess', () => {
+    it('allocates proportionally by weight across decks', () => {
       const result = allocateDailyCards({
         tagCardSets: makeTagCardSets({
           tiny: makeTag({ dueUids: ['t1'], newUids: [] }),
@@ -344,15 +345,15 @@ describe('allocateDailyCards', () => {
         ]),
       });
 
-      // alpha and beta both have 1 card but quota of 5 each, so each has 4 excess
-      // gamma (weight 50) gets priority for the excess
-      // alpha comes before beta in tagsList, so alpha's excess is redistributed first
+      // alpha and beta both have 1 card but proportional cap of 5 each
+      // gamma has proportional cap of 10
+      // excess from alpha/beta is no longer redistributed
       const alphaTotal = result.alpha.dueUids.length + result.alpha.newUids.length;
       const betaTotal = result.beta.dueUids.length + result.beta.newUids.length;
       expect(alphaTotal).toBe(1);
       expect(betaTotal).toBe(1);
       const gammaTotal = result.gamma.dueUids.length + result.gamma.newUids.length;
-      expect(gammaTotal).toBe(18);
+      expect(gammaTotal).toBe(10);
     });
   });
 });

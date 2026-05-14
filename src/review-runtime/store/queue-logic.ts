@@ -10,20 +10,6 @@ type PersistedQueue = {
   removedUids: RecordUid[];
 };
 
-export const buildInitialUids = (cardSet: CardSet): RecordUid[] => {
-  const seen = new Set<RecordUid>();
-  const uids: RecordUid[] = [];
-  const add = (uid: RecordUid) => {
-    if (seen.has(uid)) return;
-    seen.add(uid);
-    uids.push(uid);
-  };
-  cardSet.completed.forEach(add);
-  cardSet.due.forEach(add);
-  cardSet.new.forEach(add);
-  return uids;
-};
-
 export const loadPersistedQueue = (queueId: string): PersistedQueue | null => {
   try {
     const raw = localStorage.getItem(STORAGE_PREFIX + queueId);
@@ -105,14 +91,42 @@ export const applyReinsert = (prev: QueueState, uid: RecordUid, afterUid: Record
 };
 
 export const syncQueueWithCardSet = (prev: QueueState, cardSet: CardSet): QueueState => {
-  const validUidSet = new Set([...cardSet.completed, ...cardSet.due, ...cardSet.new]);
-  const prunedUids = prev.uids.filter((uid) => validUidSet.has(uid));
-  const newUids = Array.from(validUidSet).filter((uid) => !prunedUids.includes(uid));
-  const mergedUids = [...prunedUids, ...newUids];
-  const changed = mergedUids.length !== prev.uids.length || newUids.length > 0;
-  if (!changed) return prev;
-  return { ...prev, uids: mergedUids };
+  const { uids, removedUids } = reconcileUids(prev.uids, prev.removedUids, cardSet);
+  if (uids.length === prev.uids.length && removedUids.length === prev.removedUids.length) {
+    return prev;
+  }
+  return { uids, removedUids };
 };
+
+// Only-add reconciliation: preserves existing queue order (review progress),
+// appends cardSet UIDs that are missing. Never removes — cards already in the
+// queue stay even if temporarily absent from cardSet (e.g. stale allocation).
+// removedUids entries are cleared for cards that reappear in cardSet.
+export const reconcileUids = (
+  existingUids: RecordUid[],
+  existingRemoved: RecordUid[],
+  cardSet: CardSet
+): { uids: RecordUid[]; removedUids: RecordUid[] } => {
+  const cardSetUids = getCardSetUidSet(cardSet);
+  const existingSet = new Set(existingUids);
+
+  const kept = existingUids.filter((uid) => cardSetUids.has(uid));
+  const toAdd = [...cardSet.completed, ...cardSet.due, ...cardSet.new].filter(
+    (uid) => !existingSet.has(uid)
+  );
+  const reconciledRemoved = existingRemoved.filter((uid) => !cardSetUids.has(uid));
+
+  return {
+    uids: [...kept, ...toAdd],
+    removedUids: reconciledRemoved,
+  };
+};
+
+export const getCardSetUidSet = (cardSet: CardSet): Set<RecordUid> =>
+  new Set([...cardSet.completed, ...cardSet.due, ...cardSet.new]);
+
+export const hasCardsInSet = (cardSet: CardSet): boolean =>
+  cardSet.due.length + cardSet.new.length + cardSet.completed.length > 0;
 
 export const computeQueueId = (selectedTag: string): string => {
   const today = new Date().toISOString().slice(0, 10);
