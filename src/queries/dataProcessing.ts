@@ -304,6 +304,15 @@ export const allocateDailyCards = ({
     cap[tag]++; capSum++;
   }
 
+  for (const { tag } of enabled) {
+    if (result[tag].completedUids.length > cap[tag]) {
+      result[tag] = {
+        ...result[tag],
+        completedUids: result[tag].completedUids.slice(0, cap[tag]),
+      };
+    }
+  }
+
   // ── Remaining quota = cap - completed ──
   const rem: Record<string, number> = {};
   let totalRem = 0;

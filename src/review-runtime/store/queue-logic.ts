@@ -65,7 +65,12 @@ export const findDeletedUids = async (uids: string[]): Promise<string[]> => {
   }
 };
 
-export const applyReinsert = (prev: QueueState, uid: RecordUid, afterUid: RecordUid, offset: number): QueueState => {
+export const applyReinsert = (
+  prev: QueueState,
+  uid: RecordUid,
+  afterUid: RecordUid,
+  offset: number
+): QueueState => {
   const nextUids = [...prev.uids];
   const existingIndex = nextUids.indexOf(uid);
 
@@ -125,6 +130,16 @@ export const reconcileUids = (
 export const getCardSetUidSet = (cardSet: CardSet): Set<RecordUid> =>
   new Set([...cardSet.completed, ...cardSet.due, ...cardSet.new]);
 
+export const computeEffectiveQueue = (
+  uids: RecordUid[],
+  removedUids: RecordUid[],
+  cardSet: CardSet
+): RecordUid[] => {
+  const removedSet = new Set(removedUids);
+  const validUids = getCardSetUidSet(cardSet);
+  return uids.filter((uid) => !removedSet.has(uid) && validUids.has(uid));
+};
+
 export const hasCardsInSet = (cardSet: CardSet): boolean =>
   cardSet.due.length + cardSet.new.length + cardSet.completed.length > 0;
 
@@ -148,7 +163,6 @@ export const computeCardSet = (
 };
 
 export const computeTodayEnd = (): Date => {
-  const today = new Date().toISOString().slice(0, 10);
-  const [y, m, d] = today.split('-').map(Number);
-  return new Date(y, m - 1, d, 23, 59, 59);
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 };

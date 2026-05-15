@@ -4,50 +4,31 @@ import PracticeOverlay from '~/components/overlay/PracticeOverlay';
 import SidePanelWidget from '~/components/SidePanelWidget';
 import { ReviewStoreProvider } from '~/review-runtime/store/context';
 import usePracticeData from '~/hooks/usePracticeData';
-import useTags from '~/hooks/useTags';
 import useSettings from '~/hooks/useSettings';
 import useCollapseReferenceList from '~/hooks/useCollapseReferenceList';
 import useOnBlockInteract from '~/hooks/useOnBlockInteract';
 import useCommandPaletteAction from '~/hooks/useCommandPaletteAction';
 import useCachedData from '~/hooks/useCachedData';
 import useOnVisibilityStateChange from '~/hooks/useOnVisibilityStateChange';
-import { allocateDailyCards, filterBlacklistedDecks } from '~/queries/dataProcessing';
+import { parseDeckConfigNames } from '~/utils/deckConfig';
 
 const App = () => {
   const [showPracticeOverlay, setShowPracticeOverlay] = React.useState(false);
-  const [isCramming, setIsCramming] = React.useState(false);
 
   const { settings, updateSetting } = useSettings();
-  const { dailyLimit, deckConfigs, dataPageTitle, shuffleCards } = settings;
-  const { selectedTag, tagsList } = useTags({ deckConfigs });
+  const { deckConfigs, dataPageTitle, shuffleCards } = settings;
+
+  const tagsList = React.useMemo(() => parseDeckConfigNames(deckConfigs), [deckConfigs]);
 
   const { fetchCacheData, data: cachedData } = useCachedData({ dataPageTitle });
 
   const { practiceData, tagCardSets, fetchPracticeData } = usePracticeData({
     tagsList,
-    selectedTag,
     dataPageTitle,
     cachedData,
     shuffleCards,
     deckConfigs,
   });
-
-  const blacklistedTagCardSets = React.useMemo(() => {
-    if (!Object.keys(tagCardSets).length) return tagCardSets;
-    return filterBlacklistedDecks({ tagCardSets, deckConfigs });
-  }, [tagCardSets, deckConfigs]);
-
-  const filteredTagCardSets = React.useMemo(() => {
-    if (!dailyLimit || isCramming || !Object.keys(blacklistedTagCardSets).length)
-      return blacklistedTagCardSets;
-    return allocateDailyCards({
-      tagCardSets: blacklistedTagCardSets,
-      dailyLimit,
-      tagsList,
-      isCramming,
-      deckConfigs,
-    });
-  }, [blacklistedTagCardSets, dailyLimit, tagsList, isCramming, deckConfigs]);
 
   const refreshData = React.useCallback(() => {
     fetchCacheData();
@@ -66,12 +47,10 @@ const App = () => {
   const onShowPracticeOverlay = () => {
     refreshData();
     setShowPracticeOverlay(true);
-    setIsCramming(false);
   };
 
   const onClosePracticeOverlayCallback = () => {
     setShowPracticeOverlay(false);
-    setIsCramming(false);
     refreshData();
   };
 
@@ -112,13 +91,10 @@ const App = () => {
   return (
     <Blueprint.HotkeysProvider>
       <ReviewStoreProvider
-        selectedTag={selectedTag}
-        isCramming={isCramming}
-        tagCardSets={filteredTagCardSets}
+        tagCardSets={tagCardSets}
         dataPageTitle={dataPageTitle}
         practiceData={practiceData}
         settings={settings}
-        tagsList={tagsList}
         fetchPracticeData={fetchPracticeData}
         updateSetting={updateSetting}
       >

@@ -225,8 +225,6 @@ const Footer = ({
   const { handleKeyDown, handleKeyUp } = Blueprint.useHotkeys(hotkeys);
 
   const intervalEstimates: IntervalEstimates = React.useMemo(() => {
-    // New cards have no session yet — fall back to empty base so generatePracticeData
-    // computes default first-interval estimates from algorithm defaults (|| fallbacks).
     const dataForEstimates = baseCardData || currentCardData || {};
 
     const effectiveAlgorithm = currentChildAlgorithm || algorithmFromSession;
@@ -256,16 +254,8 @@ const Footer = ({
     }
     return estimates;
   }, [
-    baseCardData?.sm2_interval,
-    baseCardData?.sm2_repetitions,
-    baseCardData?.sm2_eFactor,
-    baseCardData?.progressive_repetitions,
-    baseCardData?.progressive_interval,
-    currentCardData?.sm2_interval,
-    currentCardData?.sm2_repetitions,
-    currentCardData?.sm2_eFactor,
-    currentCardData?.progressive_repetitions,
-    currentCardData?.progressive_interval,
+    baseCardData,
+    currentCardData,
     fixed_multiplier,
     fixed_unit,
     algorithmFromSession,

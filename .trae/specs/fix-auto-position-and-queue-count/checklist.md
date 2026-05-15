@@ -1,0 +1,12 @@
+- [x] computeEffectiveQueue 纯函数抽取完成，reducer 和 selector 共用同一三层过滤逻辑
+- [x] CHANGE_TAG handler 直接调用 findNextUnpracticedIndex，不再硬编码 currentIndex=0
+- [x] 切换牌组后关闭重开 Overlay，仍显示切换后的牌组（Tag 单一真相源）
+- [x] selectRemainingCount 选择器新增，Header 显示 "当前/待练习总数"
+- [x] allocateDailyCards 对 completedUids 做 cap 截断，单牌组总卡片数不超过 cap
+- [x] GRADE_CARD action 中同步更新 tagCardSets 的 dueUids/newUids/completedUids
+- [x] selectCompletedCount 直接从 completedUids.length 获取，不再遍历补偿
+- [x] selectSidebarCounts / selectTagCounts 直接从 tagCardSets 计数，不再逐 uid 重新 classifyCard
+- [x] npm run check 全部通过
+- [ ] 手动验证：切换牌组自动定位正确
+- [ ] 手动验证：评分后计数立即更新
+- [ ] 手动验证：dailyLimit 限制下队列计数与配额一致

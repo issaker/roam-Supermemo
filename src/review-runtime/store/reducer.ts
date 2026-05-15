@@ -4,9 +4,19 @@ import {
   resolveNextLblNavigation,
 } from '~/review-runtime/reviewLogic';
 import { ReviewState, ReviewAction, GradeCardPayload, ChangeConfigPayload } from './types';
-import { computeQueueId, computeCardSet, reconcileUids, hasCardsInSet, applyReinsert, computeTodayEnd } from './queue-logic';
+import {
+  computeQueueId,
+  computeCardSet,
+  computeEffectiveQueue,
+  reconcileUids,
+  hasCardsInSet,
+  applyReinsert,
+  computeTodayEnd,
+} from './queue-logic';
 import { selectEffectiveQueue } from './selectors';
 import { defaultSettings } from '~/hooks/useSettings';
+import { filterBlacklistedDecks, allocateDailyCards } from '~/queries/dataProcessing';
+import { parseDeckConfigNames } from '~/utils/deckConfig';
 
 export const initialReviewState: ReviewState = {
   facts: { latestByUid: {}, pendingByUid: {} },
@@ -14,11 +24,33 @@ export const initialReviewState: ReviewState = {
   queues: {},
   selectedTag: '',
   isCramming: false,
+  rawTagCardSets: {},
   tagCardSets: {},
   dataPageTitle: '',
   practiceData: {},
   settings: defaultSettings,
-  tagsList: [],
+  tagsList: parseDeckConfigNames(defaultSettings.deckConfigs),
+};
+
+const computeTagsList = (deckConfigs: string): string[] => parseDeckConfigNames(deckConfigs);
+
+const computeFilteredTagCardSets = (state: ReviewState): ReviewState['tagCardSets'] => {
+  const { rawTagCardSets, settings, isCramming, tagsList } = state;
+  const { dailyLimit, deckConfigs } = settings;
+
+  if (!Object.keys(rawTagCardSets).length) return rawTagCardSets;
+
+  const blacklisted = filterBlacklistedDecks({ tagCardSets: rawTagCardSets, deckConfigs });
+
+  if (!dailyLimit || isCramming) return blacklisted;
+
+  return allocateDailyCards({
+    tagCardSets: blacklisted,
+    dailyLimit,
+    tagsList,
+    isCramming,
+    deckConfigs,
+  });
 };
 
 const findNextUnpracticedIndex = (
@@ -158,16 +190,30 @@ export const reviewReducer = (state: ReviewState, action: ReviewAction): ReviewS
     }
 
     case 'CHANGE_TAG': {
+      const newQueues = reconcileQueueForTag(state.queues, action.tag, state.tagCardSets);
+      const queueId = computeQueueId(action.tag);
+      const queue = newQueues[queueId];
+      const cardSet = computeCardSet(state.tagCardSets, action.tag);
+      const effectiveQueue = queue
+        ? computeEffectiveQueue(queue.uids, queue.removedUids, cardSet)
+        : [];
+      const nextIndex = findNextUnpracticedIndex(
+        effectiveQueue,
+        state.facts.latestByUid,
+        cardSet.lblMeta,
+        0
+      );
       return {
         ...state,
         selectedTag: action.tag,
-        queues: reconcileQueueForTag(state.queues, action.tag, state.tagCardSets),
-        viewState: { currentIndex: 0, focusedChildUid: undefined, maxVisitedChildIndex: 0 },
+        queues: newQueues,
+        viewState: { currentIndex: nextIndex, focusedChildUid: undefined, maxVisitedChildIndex: 0 },
       };
     }
 
     case 'SET_CRAMMING': {
-      return { ...state, isCramming: action.value };
+      const newState = { ...state, isCramming: action.value };
+      return { ...newState, tagCardSets: computeFilteredTagCardSets(newState) };
     }
 
     case 'SET_TAG_CARD_SETS': {
@@ -176,24 +222,69 @@ export const reviewReducer = (state: ReviewState, action: ReviewAction): ReviewS
         action.practiceData,
         state.facts.pendingByUid
       );
-      const newQueues = state.selectedTag
-        ? reconcileQueueForTag(state.queues, state.selectedTag, action.tagCardSets)
-        : state.queues;
-      return {
+      const withRaw = {
         ...state,
-        tagCardSets: action.tagCardSets,
+        rawTagCardSets: action.tagCardSets,
         practiceData: action.practiceData,
         facts: { ...state.facts, latestByUid: mergedLatest },
-        queues: newQueues,
       };
+      const withFiltered = { ...withRaw, tagCardSets: computeFilteredTagCardSets(withRaw) };
+      const newQueues = withFiltered.selectedTag
+        ? reconcileQueueForTag(
+            withFiltered.queues,
+            withFiltered.selectedTag,
+            withFiltered.tagCardSets
+          )
+        : withFiltered.queues;
+      return { ...withFiltered, queues: newQueues };
     }
 
     case 'UPDATE_SETTINGS': {
-      return { ...state, settings: { ...state.settings, ...action.settings } };
-    }
-
-    case 'SET_TAGS_LIST': {
-      return { ...state, tagsList: action.tagsList };
+      const newSettings = { ...state.settings, ...action.settings };
+      const newTagsList = computeTagsList(newSettings.deckConfigs);
+      const selectedTagValid =
+        state.selectedTag && newTagsList.includes(state.selectedTag)
+          ? state.selectedTag
+          : newTagsList[0] || '';
+      const withSettings = {
+        ...state,
+        settings: newSettings,
+        tagsList: newTagsList,
+        selectedTag: selectedTagValid,
+      };
+      const withFiltered = {
+        ...withSettings,
+        tagCardSets: computeFilteredTagCardSets(withSettings),
+      };
+      if (selectedTagValid !== state.selectedTag) {
+        const newQueues = reconcileQueueForTag(
+          withFiltered.queues,
+          selectedTagValid,
+          withFiltered.tagCardSets
+        );
+        const queueId = computeQueueId(selectedTagValid);
+        const queue = newQueues[queueId];
+        const cardSet = computeCardSet(withFiltered.tagCardSets, selectedTagValid);
+        const effectiveQueue = queue
+          ? computeEffectiveQueue(queue.uids, queue.removedUids, cardSet)
+          : [];
+        const nextIndex = findNextUnpracticedIndex(
+          effectiveQueue,
+          withFiltered.facts.latestByUid,
+          cardSet.lblMeta,
+          0
+        );
+        return {
+          ...withFiltered,
+          queues: newQueues,
+          viewState: {
+            currentIndex: nextIndex,
+            focusedChildUid: undefined,
+            maxVisitedChildIndex: 0,
+          },
+        };
+      }
+      return withFiltered;
     }
 
     case 'SET_DATA_PAGE_TITLE': {
@@ -205,10 +296,8 @@ export const reviewReducer = (state: ReviewState, action: ReviewAction): ReviewS
         ...state.queues,
         [action.queueId]: { uids: action.uids, removedUids: action.removedUids },
       };
-      const effectiveQueue = action.uids.filter(
-        (uid) => !new Set(action.removedUids).has(uid)
-      );
       const cardSet = computeCardSet(state.tagCardSets, state.selectedTag);
+      const effectiveQueue = computeEffectiveQueue(action.uids, action.removedUids, cardSet);
       const nextIndex = findNextUnpracticedIndex(
         effectiveQueue,
         state.facts.latestByUid,
@@ -261,6 +350,39 @@ export const reviewReducer = (state: ReviewState, action: ReviewAction): ReviewS
   }
 };
 
+const reclassifyInTagCardSets = (
+  tagCardSets: ReviewState['tagCardSets'],
+  selectedTag: string,
+  uid: string,
+  latestByUid: ReviewState['facts']['latestByUid'],
+  lblMeta: Record<string, string[]>
+): ReviewState['tagCardSets'] => {
+  const tagData = tagCardSets[selectedTag];
+  if (!tagData) return tagCardSets;
+
+  const todayEnd = computeTodayEnd();
+  const isCompleted = isCardCompletedToday(uid, latestByUid, lblMeta, todayEnd);
+
+  if (!isCompleted) return tagCardSets;
+
+  const isInDue = tagData.dueUids.includes(uid);
+  const isInNew = tagData.newUids.includes(uid);
+  const isInCompleted = tagData.completedUids.includes(uid);
+
+  if (!isInDue && !isInNew) return tagCardSets;
+  if (isInCompleted) return tagCardSets;
+
+  return {
+    ...tagCardSets,
+    [selectedTag]: {
+      ...tagData,
+      dueUids: tagData.dueUids.filter((u) => u !== uid),
+      newUids: tagData.newUids.filter((u) => u !== uid),
+      completedUids: [...tagData.completedUids, uid],
+    },
+  };
+};
+
 const handleGradeCard = (state: ReviewState, payload: GradeCardPayload): ReviewState => {
   const {
     sessions,
@@ -288,9 +410,8 @@ const handleGradeCard = (state: ReviewState, payload: GradeCardPayload): ReviewS
 
   const queue = state.queues[queueId];
   if (queue) {
-    const removedSet = new Set(queue.removedUids);
-    const effectiveQueue = queue.uids.filter((uid) => !removedSet.has(uid));
     const cardSet = computeCardSet(state.tagCardSets, state.selectedTag);
+    const effectiveQueue = computeEffectiveQueue(queue.uids, queue.removedUids, cardSet);
 
     if (!isChild || grade === 0) {
       const reinsertUid = isChild ? parentUid! : targetUid;
@@ -300,9 +421,10 @@ const handleGradeCard = (state: ReviewState, payload: GradeCardPayload): ReviewS
           ...newQueues,
           [queueId]: applyReinsert(queue, reinsertUid, afterUid, forgotReinsertOffset),
         };
-        const newRemovedSet = new Set(newQueues[queueId].removedUids);
-        const newEffectiveQueue = newQueues[queueId].uids.filter(
-          (uid) => !newRemovedSet.has(uid)
+        const newEffectiveQueue = computeEffectiveQueue(
+          newQueues[queueId].uids,
+          newQueues[queueId].removedUids,
+          cardSet
         );
         const nextIndex = findNextUnpracticedIndex(
           newEffectiveQueue,
@@ -345,9 +467,10 @@ const handleGradeCard = (state: ReviewState, payload: GradeCardPayload): ReviewS
           ...newQueues,
           [queueId]: applyReinsert(queue, parentUid!, afterUid, lblNextReinsertOffset),
         };
-        const newRemovedSet = new Set(newQueues[queueId].removedUids);
-        const newEffectiveQueue = newQueues[queueId].uids.filter(
-          (uid) => !newRemovedSet.has(uid)
+        const newEffectiveQueue = computeEffectiveQueue(
+          newQueues[queueId].uids,
+          newQueues[queueId].removedUids,
+          cardSet
         );
         const nextIndex = findNextUnpracticedIndex(
           newEffectiveQueue,
@@ -384,7 +507,65 @@ const handleGradeCard = (state: ReviewState, payload: GradeCardPayload): ReviewS
     }
   }
 
-  return { ...state, facts: newFacts, queues: newQueues, viewState: newViewState };
+  const cardSet = computeCardSet(state.tagCardSets, state.selectedTag);
+  let newTagCardSets = reclassifyInTagCardSets(
+    state.tagCardSets,
+    state.selectedTag,
+    targetUid,
+    newFacts.latestByUid,
+    cardSet.lblMeta
+  );
+  let newRawTagCardSets = reclassifyInTagCardSets(
+    state.rawTagCardSets,
+    state.selectedTag,
+    targetUid,
+    newFacts.latestByUid,
+    cardSet.lblMeta
+  );
+
+  if (isChild && parentUid) {
+    const parentIsCompleted = isCardCompletedToday(
+      parentUid,
+      newFacts.latestByUid,
+      cardSet.lblMeta,
+      computeTodayEnd()
+    );
+    if (parentIsCompleted) {
+      const parentTagData = newTagCardSets[state.selectedTag];
+      if (parentTagData && !parentTagData.completedUids.includes(parentUid)) {
+        newTagCardSets = {
+          ...newTagCardSets,
+          [state.selectedTag]: {
+            ...parentTagData,
+            dueUids: parentTagData.dueUids.filter((u) => u !== parentUid),
+            newUids: parentTagData.newUids.filter((u) => u !== parentUid),
+            completedUids: [...parentTagData.completedUids, parentUid],
+          },
+        };
+      }
+      const rawParentTagData = newRawTagCardSets[state.selectedTag];
+      if (rawParentTagData && !rawParentTagData.completedUids.includes(parentUid)) {
+        newRawTagCardSets = {
+          ...newRawTagCardSets,
+          [state.selectedTag]: {
+            ...rawParentTagData,
+            dueUids: rawParentTagData.dueUids.filter((u) => u !== parentUid),
+            newUids: rawParentTagData.newUids.filter((u) => u !== parentUid),
+            completedUids: [...rawParentTagData.completedUids, parentUid],
+          },
+        };
+      }
+    }
+  }
+
+  return {
+    ...state,
+    facts: newFacts,
+    queues: newQueues,
+    viewState: newViewState,
+    rawTagCardSets: newRawTagCardSets,
+    tagCardSets: newTagCardSets,
+  };
 };
 
 const handleChangeConfig = (state: ReviewState, payload: ChangeConfigPayload): ReviewState => {

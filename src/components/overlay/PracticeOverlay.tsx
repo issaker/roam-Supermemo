@@ -34,6 +34,7 @@ import { generateNewSession } from '~/queries';
 import { RenderMode } from '~/models/practice';
 import { colors, getAlgorithmColor } from '~/theme';
 import { useReviewStore } from '~/review-runtime/store/context';
+import type { ReviewState } from '~/review-runtime/store/types';
 import {
   selectCurrentCardRefUid,
   selectCurrentCardData,
@@ -99,11 +100,6 @@ interface Props {
 }
 
 const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
-  const handleClose = React.useCallback(() => {
-    restoreAllBlocks();
-    onCloseCallback();
-  }, [onCloseCallback]);
-
   const { state, dispatch, actions, updateSetting } = useReviewStore();
   const { facts, viewState, selectedTag, tagCardSets, settings, dataPageTitle } = state;
   const {
@@ -113,6 +109,12 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
     showBreadcrumbs,
     showModeBorders,
   } = settings;
+
+  const handleClose = React.useCallback(() => {
+    restoreAllBlocks();
+    dispatch({ type: 'SET_CRAMMING', value: false });
+    onCloseCallback();
+  }, [dispatch, onCloseCallback]);
 
   const {
     currentCardRefUid,
@@ -456,14 +458,12 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
 
   const handleApplyAndClose = React.useCallback(
     (formSettings: import('~/components/SettingsForm').SettingsFormSettings) => {
-      // Sync to extensionAPI + useSettings (app-level), so filteredTagCardSets
-      // in app.tsx picks up dailyLimit / deckConfigs changes and re-allocates.
       for (const [key, value] of Object.entries(formSettings)) {
         updateSetting(key as keyof typeof formSettings, value);
       }
       dispatch({
         type: 'UPDATE_SETTINGS',
-        settings: formSettings as Partial<typeof state.settings>,
+        settings: formSettings as Partial<ReviewState['settings']>,
       });
       setShowSettings(false);
       resetToFirstUnpracticed();

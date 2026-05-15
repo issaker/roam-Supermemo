@@ -19,14 +19,12 @@ import * as queries from '~/queries';
 
 const usePracticeCardsData = ({
   tagsList,
-  selectedTag,
   dataPageTitle,
   cachedData,
   shuffleCards,
   deckConfigs,
 }: {
   tagsList: string[];
-  selectedTag: string;
   dataPageTitle: string;
   cachedData: any;
   shuffleCards: boolean;
@@ -52,8 +50,6 @@ const usePracticeCardsData = ({
     const thisVersion = ++fetchVersionRef.current;
 
     (async () => {
-      if (!selectedTag) return;
-
       try {
         const { practiceData: freshPracticeData, tagCardSets: freshTagCardSets } =
           await queries.getPracticeData({

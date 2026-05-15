@@ -59,13 +59,10 @@ export const useReviewStore = (): ReviewStoreContextValue => {
 
 type ReviewStoreProviderProps = {
   children: React.ReactNode;
-  selectedTag: string;
-  isCramming: boolean;
   tagCardSets: ReviewState['tagCardSets'];
   dataPageTitle: string;
   practiceData: Records;
   settings: ReviewState['settings'];
-  tagsList: string[];
   fetchPracticeData: () => void;
   updateSetting: <K extends keyof ReviewState['settings']>(
     key: K,
@@ -75,13 +72,10 @@ type ReviewStoreProviderProps = {
 
 export const ReviewStoreProvider = ({
   children,
-  selectedTag,
-  isCramming,
   tagCardSets,
   dataPageTitle,
   practiceData,
   settings,
-  tagsList,
   fetchPracticeData: _fetchPracticeData,
   updateSetting,
 }: ReviewStoreProviderProps) => {
@@ -94,14 +88,6 @@ export const ReviewStoreProvider = ({
   }, [tagCardSets, practiceData]);
 
   React.useEffect(() => {
-    dispatch({ type: 'CHANGE_TAG', tag: selectedTag });
-  }, [selectedTag]);
-
-  React.useEffect(() => {
-    dispatch({ type: 'SET_CRAMMING', value: isCramming });
-  }, [isCramming]);
-
-  React.useEffect(() => {
     dispatch({ type: 'SET_DATA_PAGE_TITLE', dataPageTitle });
   }, [dataPageTitle]);
 
@@ -109,15 +95,12 @@ export const ReviewStoreProvider = ({
     dispatch({ type: 'UPDATE_SETTINGS', settings });
   }, [settings]);
 
-  React.useEffect(() => {
-    dispatch({ type: 'SET_TAGS_LIST', tagsList });
-  }, [tagsList]);
-
   const queueId = computeQueueId(state.selectedTag);
   const cardSet = computeCardSet(state.tagCardSets, state.selectedTag);
   const hasCards = hasCardsInSet(cardSet);
 
   // Restore persisted queue on page refresh, reconciled with current cardSet.
+  // cardSet intentionally omitted — changes are tracked via queueId + hasCards + cardSetFingerprint
   React.useEffect(() => {
     if (!hasCards) return;
     const persisted = loadPersistedQueue(queueId);
@@ -125,6 +108,7 @@ export const ReviewStoreProvider = ({
       ? reconcileUids(persisted.uids, persisted.removedUids, cardSet)
       : reconcileUids([], [], cardSet);
     dispatch({ type: 'QUEUE_INIT', queueId, uids, removedUids });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueId, hasCards]);
 
   const cardSetFingerprint = React.useMemo(() => {
@@ -132,6 +116,8 @@ export const ReviewStoreProvider = ({
     return `${cardSet.completed.length}:${cardSet.due.length}:${cardSet.new.length}`;
   }, [hasCards, cardSet.completed.length, cardSet.due.length, cardSet.new.length]);
 
+  // Sync queue when cardSet fingerprint changes (uids added/removed from cardSet).
+  // cardSet intentionally omitted — its changes are captured by cardSetFingerprint.
   React.useEffect(() => {
     if (!hasCards) return;
     const currentQueue = stateRef.current.queues[queueId];
@@ -140,6 +126,7 @@ export const ReviewStoreProvider = ({
     if (synced !== currentQueue) {
       dispatch({ type: 'QUEUE_INIT', queueId, uids: synced.uids, removedUids: synced.removedUids });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueId, hasCards, cardSetFingerprint]);
 
   const today = queueId.slice(0, 10);
@@ -324,10 +311,9 @@ export const ReviewStoreProvider = ({
       } else {
         const currentSession = currentState.facts.latestByUid[input.targetUid];
         if (currentSession) {
-          // NewSession has isNew:true and no nextDueDate — strip isNew before merging
+          // NewSession has isNew:true — strip via omitIsNew before merging
           // so the optimistic update doesn't re-classify the card as 'new'.
-          const base = { ...(currentSession as any) };
-          delete base.isNew;
+          const base = omitIsNew(currentSession as Session);
           sessions[input.targetUid] = {
             ...base,
             ...(input.algorithm !== undefined ? { algorithm: input.algorithm } : {}),

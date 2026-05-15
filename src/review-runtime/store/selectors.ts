@@ -1,5 +1,4 @@
 import {
-  classifyCard,
   RecordUid,
   Session,
   DEFAULT_REVIEW_CONFIG,
@@ -8,19 +7,19 @@ import {
 } from '~/models/session';
 import { isCardCompletedToday } from '~/review-runtime/reviewLogic';
 import { ReviewState, SessionFacts, LatestSessionRecord } from './types';
-import { computeQueueId, computeCardSet, computeTodayEnd, getCardSetUidSet } from './queue-logic';
+import {
+  computeQueueId,
+  computeCardSet,
+  computeTodayEnd,
+  computeEffectiveQueue,
+} from './queue-logic';
 
 export const selectEffectiveQueue = (state: ReviewState): RecordUid[] => {
   const queueId = computeQueueId(state.selectedTag);
   const queue = state.queues[queueId];
   if (!queue) return [];
-  const removedSet = new Set(queue.removedUids);
-  // CardSet mask: only show cards that exist in the current quota-limited
-  // cardSet. This makes dailyLimit/deckConfig changes take effect immediately
-  // on the visible queue (both expanding and shrinking).
   const cardSet = computeCardSet(state.tagCardSets, state.selectedTag);
-  const validUids = getCardSetUidSet(cardSet);
-  return queue.uids.filter((uid) => !removedSet.has(uid) && validUids.has(uid));
+  return computeEffectiveQueue(queue.uids, queue.removedUids, cardSet);
 };
 
 export const selectCurrentCardRefUid = (state: ReviewState): string | undefined => {
@@ -67,6 +66,33 @@ export const selectCardQueueLength = (state: ReviewState): number => {
   return selectEffectiveQueue(state).length;
 };
 
+export const selectRemainingCount = (state: ReviewState): number => {
+  const queue = selectEffectiveQueue(state);
+  const todayEnd = computeTodayEnd();
+  const cardSet = computeCardSet(state.tagCardSets, state.selectedTag);
+  let remaining = 0;
+  for (const uid of queue) {
+    if (!isCardCompletedToday(uid, state.facts.latestByUid, cardSet.lblMeta, todayEnd)) {
+      remaining++;
+    }
+  }
+  return remaining;
+};
+
+export const selectCurrentRemainingPosition = (state: ReviewState): number => {
+  const queue = selectEffectiveQueue(state);
+  const todayEnd = computeTodayEnd();
+  const cardSet = computeCardSet(state.tagCardSets, state.selectedTag);
+  const currentIndex = state.viewState.currentIndex;
+  let position = 0;
+  for (let i = 0; i <= currentIndex && i < queue.length; i++) {
+    if (!isCardCompletedToday(queue[i], state.facts.latestByUid, cardSet.lblMeta, todayEnd)) {
+      position++;
+    }
+  }
+  return position;
+};
+
 export const selectIsDone = (state: ReviewState): boolean => {
   return !selectCurrentCardRefUid(state);
 };
@@ -74,33 +100,15 @@ export const selectIsDone = (state: ReviewState): boolean => {
 export const selectCompletedCount = (state: ReviewState): number => {
   const tagData = state.tagCardSets[state.selectedTag];
   if (!tagData) return 0;
-  const todayEnd = computeTodayEnd();
-  const cardSet = computeCardSet(state.tagCardSets, state.selectedTag);
-  let count = tagData.completedUids.length;
-  for (const uid of [...tagData.dueUids, ...tagData.newUids]) {
-    if (isCardCompletedToday(uid, state.facts.latestByUid, cardSet.lblMeta, todayEnd)) {
-      count++;
-    }
-  }
-  return count;
+  return tagData.completedUids.length;
 };
 
 export const selectSidebarCounts = (state: ReviewState): { dueCount: number; newCount: number } => {
-  const now = new Date();
   let dueCount = 0;
   let newCount = 0;
   for (const tagData of Object.values(state.tagCardSets)) {
-    for (const uid of tagData.dueUids) {
-      const session = state.facts.latestByUid[uid];
-      const cls = session ? classifyCard({ session, now }) : 'due';
-      if (cls === 'due') dueCount++;
-    }
-    for (const uid of tagData.newUids) {
-      const session = state.facts.latestByUid[uid];
-      const cls = session ? classifyCard({ session, now }) : 'new';
-      if (cls === 'new') newCount++;
-      else if (cls === 'due') dueCount++;
-    }
+    dueCount += tagData.dueUids.length;
+    newCount += tagData.newUids.length;
   }
   return { dueCount, newCount };
 };
@@ -111,21 +119,7 @@ export const selectTagCounts = (
 ): { dueCount: number; newCount: number } => {
   const tagData = state.tagCardSets[tag];
   if (!tagData) return { dueCount: 0, newCount: 0 };
-  const now = new Date();
-  let dueCount = 0;
-  let newCount = 0;
-  for (const uid of tagData.dueUids) {
-    const session = state.facts.latestByUid[uid];
-    const cls = session ? classifyCard({ session, now }) : 'due';
-    if (cls === 'due') dueCount++;
-  }
-  for (const uid of tagData.newUids) {
-    const session = state.facts.latestByUid[uid];
-    const cls = session ? classifyCard({ session, now }) : 'new';
-    if (cls === 'new') newCount++;
-    else if (cls === 'due') dueCount++;
-  }
-  return { dueCount, newCount };
+  return { dueCount: tagData.dueUids.length, newCount: tagData.newUids.length };
 };
 
 export const selectRenderMode = (state: ReviewState): import('~/models/practice').RenderMode => {

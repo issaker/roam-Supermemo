@@ -1,4 +1,12 @@
-import type { NewSession, RecordUid, Session, Records, SchedulingAlgorithm, InteractionStyle, FixedTimeUnit } from '~/models/session';
+import type {
+  NewSession,
+  RecordUid,
+  Session,
+  Records,
+  SchedulingAlgorithm,
+  InteractionStyle,
+  FixedTimeUnit,
+} from '~/models/session';
 import type { TagCardSets } from '~/models/practice';
 import type { Settings } from '~/hooks/useSettings';
 
@@ -33,6 +41,7 @@ export type ReviewState = {
   queues: Record<string, QueueState>;
   selectedTag: string;
   isCramming: boolean;
+  rawTagCardSets: TagCardSets;
   tagCardSets: TagCardSets;
   dataPageTitle: string;
   practiceData: Records;
@@ -100,7 +109,6 @@ export type ReviewAction =
   | { type: 'SET_CRAMMING'; value: boolean }
   | { type: 'SET_TAG_CARD_SETS'; tagCardSets: TagCardSets; practiceData: Records }
   | { type: 'UPDATE_SETTINGS'; settings: Partial<Settings> }
-  | { type: 'SET_TAGS_LIST'; tagsList: string[] }
   | { type: 'SET_DATA_PAGE_TITLE'; dataPageTitle: string }
   | { type: 'QUEUE_INIT'; queueId: string; uids: RecordUid[]; removedUids: RecordUid[] }
   | { type: 'QUEUE_REINSERT'; queueId: string; uid: RecordUid; afterUid: RecordUid; offset: number }

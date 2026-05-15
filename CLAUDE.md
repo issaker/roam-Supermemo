@@ -61,7 +61,12 @@ The `src/review-runtime/store/` directory (2025-05) consolidated what was previo
                     │    facts.pendingByUid ← saving guards   │
                     │    viewState          ← navigation      │
                     │    queues[queueId]    ← card ordering   │
-                    │    selectedTag, isCramming, settings... │
+                    │    rawTagCardSets     ← unfiltered data │
+                    │    tagCardSets        ← filtered+alloc  │
+                    │    selectedTag        ← ONLY in store   │
+                    │    isCramming         ← ONLY in store   │
+                    │    tagsList           ← derived in red. │
+                    │    settings...                          │
                     └──────────────┬──────────────────────────┘
                                    │
                     ┌──────────────┼──────────────────────────┐
@@ -70,7 +75,7 @@ The `src/review-runtime/store/` directory (2025-05) consolidated what was previo
               │  Reducer   │ │ Selectors │ │    Actions         │
               │ (pure fn)  │ │ (pure fn) │ │  (async side fx)   │
               │            │ │           │ │                    │
-              │ 18 actions │ │ queue,    │ │ gradeCard,         │
+              │ 19 actions │ │ queue,    │ │ gradeCard,         │
               │ transform  │ │ card,     │ │ undoCard,          │
               │ state      │ │ meta,     │ │ changeConfig,      │
               │ immutably  │ │ counts... │ │ ensureLatest,      │
@@ -122,13 +127,14 @@ Components that only need store data (like Header, SidePanelWidget) should use `
 | Duplicating store data in local component state | Derive from store via selectors |
 | Multiple `useMemo(() => selector(state), [state])` scattered in one component | Consolidate into a single `useMemo` returning all derived values |
 | Two components maintaining separate copies of the same data | Single source in store, both read via selectors |
+| Duplicating `selectedTag`/`isCramming`/`tagsList` in both app layer and store | These live ONLY in the store; app layer dispatches actions to modify them |
 
 ## Three Functional Layers
 
 ```
-Pipeline (queries/)          → 2-step: classifyAllCards → allocateDailyCards, computes TagCardSets from Roam data
+Pipeline (queries/)          → 2-step: classifyAllCards → allocateDailyCards, computes raw TagCardSets from Roam data
 Queue   (store/queue-logic)  → state.uids snapshot + reinsert + mask filtering, session-stable
-Runtime (store/)             → facts + viewState + queue, coordinates everything
+Runtime (store/)             → facts + viewState + queue + filteredTagCardSets, coordinates everything
 
 Card System (rendering / interaction)
 ────────────────────────────────────
@@ -185,7 +191,7 @@ Primary Queue (◀/▶): cards sorted by due-date urgency
 
 ## Inviolable Rules
 
-1. **Single source of truth.** All review state lives in `ReviewState` (via `useReducer`). No parallel Context providers, no duplicate useState chains. If data exists in the store, components MUST read it from the store via selectors, not from props or other contexts.
+1. **Single source of truth.** All review state lives in `ReviewState` (via `useReducer`). No parallel Context providers, no duplicate useState chains. If data exists in the store, components MUST read it from the store via selectors, not from props or other contexts. `selectedTag`, `isCramming`, and `tagsList` live ONLY in the store — the app layer dispatches actions to modify them, never holds its own copy.
 2. **Queue is snapshot + reinsert + mask.** `state.uids` is the single source of truth for ordering — built once per session and never recomputed. Insertion changes go through `reinsert(uid, afterUid, offset)` which directly modifies the snapshot. Display filtering (quota mask `cardSet` + blacklist mask `removedUids`) is a pure read layer that never modifies the snapshot. The snapshot and `removedUids` are persisted to `localStorage` (key: `roam-memo:queue:{queueId}`) so page refreshes resume the session; stale entries from other days are auto-cleaned on mount.
 3. **No separate code paths for normal vs LBL in card interaction.** `useCardBlock` is the single card pipeline. `reviewUnit` is the single grading action.
 4. **Card algorithm from the card's OWN session.** When a card has its own session, its algorithm comes from that session (not a parent). For new cards without a session, `useCardBlock` accepts a `fallbackAlgorithm` parameter (LBL children pass the parent's algorithm; normal cards use `DEFAULT_REVIEW_CONFIG.algorithm`).
@@ -197,22 +203,22 @@ Primary Queue (◀/▶): cards sorted by due-date urgency
 
 | Path | Role |
 |------|------|
-| `src/review-runtime/store/types.ts` | Core types: `ReviewState`, `ReviewAction` (18 action types), `SessionFacts`, `ReviewViewState`, `QueueState`, payload types |
-| `src/review-runtime/store/reducer.ts` | Pure function reducer. All state transformations. `handleGradeCard`/`handleChangeConfig` for complex flows. |
+| `src/review-runtime/store/types.ts` | Core types: `ReviewState`, `ReviewAction` (19 action types), `SessionFacts`, `ReviewViewState`, `QueueState`, payload types |
+| `src/review-runtime/store/reducer.ts` | Pure function reducer. All state transformations. `handleGradeCard`/`handleChangeConfig` for complex flows. `computeFilteredTagCardSets`/`computeTagsList` derive `tagCardSets`/`tagsList` from `rawTagCardSets`/`settings`. |
 | `src/review-runtime/store/context.tsx` | `ReviewStoreProvider` + `useReviewStore`. Async actions: `gradeCard`, `undoCard`, `changeConfig`, `ensureLatestSessions`, `checkDeleted` |
 | `src/review-runtime/store/selectors.ts` | Pure derivation: `selectEffectiveQueue`, `selectCurrentCardRefUid`, `selectCurrentCardData`, `selectCardMeta`, `selectAlgorithm`, `selectInteraction`, `selectCardQueueLength`, `selectIsDone`, `selectCompletedCount`, `selectSidebarCounts`, `selectTagCounts`, `selectRenderMode`, `deriveChildSessionMap` |
 | `src/review-runtime/store/queue-logic.ts` | Queue pure functions: `buildInitialUids`, `loadPersistedQueue`, `savePersistedQueue`, `applyReinsert`, `syncQueueWithCardSet`, `findDeletedUids`, `computeQueueId`, `computeCardSet`, `computeTodayEnd`, `cleanStaleQueueKeys` |
 | `src/review-runtime/reviewLogic.ts` | Pure business logic: `omitIsNew`, `mergeSourceIntoFacts`, `isCardCompletedToday`, `calculateChildReview`, `calculateNormalReview`, `resolveNextLblNavigation`. Testable without React. |
 | `src/hooks/useCardBlock.ts` | Single card pipeline: block info, cloze guard, showAnswers. |
 | `src/hooks/useLineByLineReview.ts` | LBL Y-axis: child positioning, progressive reveal. Grading delegated to store actions. |
-| `src/hooks/usePracticeData.tsx` | Practice data fetch from Roam. No freezing — queue stability is handled by store. |
+| `src/hooks/usePracticeData.tsx` | Practice data fetch from Roam. Returns raw `tagCardSets` (unfiltered). No freezing — queue stability is handled by store. |
 | `src/hooks/useSettings.ts` | Settings store: extensionAPI primary, Roam page backup (5s debounce). |
 | `src/models/session.ts` | Session model, `SchedulingAlgorithm`, `InteractionStyle`, `classifyCard` (unified Normal + LBL classification). |
 | `src/models/practice.ts` | Queue strategies: `sortNormalDueCardUids` (urgency), `deriveLblSubQueue` (single LBL sub-queue derivation point). |
 | `src/queries/data.ts` | Roam page read/write, session parsing (`parseLatestSession`, `mergeSessionSnapshot`), `allocateDailyCards`. |
 | `src/queries/save.ts` | Writing sessions to Roam: `savePracticeData` (with baseline session creation on first practice), `updateParentNextDueDate`, `updateReviewConfig`, `undoCardSession` |
 | `src/queries/today.ts` | Due/new/completed calculation pipeline. All card types classified via `classifyCard`. |
-| `src/queries/dataProcessing.ts` | Session parsing, `allocateDailyCards` (proportional daily limit allocation). |
+| `src/queries/dataProcessing.ts` | Session parsing, `allocateDailyCards` (proportional daily limit allocation), `filterBlacklistedDecks`. Also called by reducer for `computeFilteredTagCardSets`. |
 | `src/practice.ts` | Pure scheduling math: SM2 (`supermemo`), Progressive (`progressiveInterval`), Fixed Time. |
 | `src/theme.ts` | Algorithm colors, intent colors, and styled-component color tokens. Documented in `THEME_SYSTEM.md`. |
 
@@ -220,10 +226,12 @@ Primary Queue (◀/▶): cards sorted by due-date urgency
 
 ```
 App (root)
-├── useSettings → tagsList, deckConfigs, dataPageTitle
+├── useSettings → settings, dataPageTitle
 ├── useCachedData → cachedData
-├── usePracticeData → practiceData, today
-└── ReviewStoreProvider (selectedTag, isCramming, tagCardSets, practiceData, settings, tagsList, ...)
+├── usePracticeData → rawTagCardSets, practiceData
+└── ReviewStoreProvider (rawTagCardSets, practiceData, settings, ...)
+    │  ← selectedTag/isCramming/tagsList live ONLY in store
+    │  ← tagCardSets computed by reducer: filterBlacklistedDecks + allocateDailyCards
     ├── SidePanelWidget ← useReviewStore() + selectSidebarCounts
     └── PracticeOverlay ← useReviewStore() + selectors
         ├── MainContext (view-model: composed callbacks + local UI state)
@@ -308,3 +316,5 @@ Do NOT remove `library.export: 'default'` from standalone config — Roam loads 
 - **React 17:** Project uses React 17 + Blueprint 3.x. Do not upgrade without verifying `@blueprintjs/select` v3 compatibility.
 - **No new Context providers.** All review state must flow through `ReviewStoreProvider`. If you're tempted to create a new Context, add the data to `ReviewState` instead.
 - **`selectCurrentCardData` must NOT filter by `nextDueDate`.** This selector returns `LatestSessionRecord` (both `Session` and `NewSession`). Adding `'nextDueDate' in record` back will silently break new cards: algorithm switches revert to default, grading buttons disappear, `changeConfig` has no visible effect. New cards need this selector to return their record so the selector chain can read `algorithm`/`interaction` from state.
+- **`rawTagCardSets` vs `tagCardSets`.** `rawTagCardSets` stores unfiltered data from Roam (via `usePracticeData`). `tagCardSets` is derived by the reducer via `computeFilteredTagCardSets` (applies `filterBlacklistedDecks` + `allocateDailyCards`). Never modify `tagCardSets` directly — it is recomputed whenever `rawTagCardSets`, `settings`, `isCramming`, or `tagsList` changes. When `handleGradeCard` reclassifies cards, it updates BOTH `rawTagCardSets` and `tagCardSets` to keep them consistent.
+- **`tagsList` is derived, not stored independently.** `tagsList` is computed by `computeTagsList(settings.deckConfigs)` in the reducer. It is NOT passed from the app layer. When `UPDATE_SETTINGS` fires, the reducer recomputes `tagsList` and validates `selectedTag` (resets to `tagsList[0]` if the current tag is no longer valid). Do NOT add a `SET_TAGS_LIST` action or a separate `useTags` hook.

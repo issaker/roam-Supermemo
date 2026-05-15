@@ -30,7 +30,7 @@ describe('allocateDailyCards', () => {
     expect(result.memo.newUids).toEqual(['c']);
   });
 
-  it('clears all deck due/new when remainingLimit is 0 (all quota used)', () => {
+  it('truncates completedUids to cap and allocates remaining quota', () => {
     const sets = makeTagCardSets({
       memo: makeTag({
         dueUids: ['a', 'b'],
@@ -51,10 +51,12 @@ describe('allocateDailyCards', () => {
       ]),
     });
 
+    expect(result.memo.completedUids.length).toBeLessThanOrEqual(3);
     expect(result.memo.dueUids).toEqual([]);
     expect(result.memo.newUids).toEqual([]);
-    expect(result.daily.dueUids).toEqual([]);
-    expect(result.daily.newUids).toEqual([]);
+    expect(result.daily.dueUids.length + result.daily.newUids.length).toBeGreaterThan(0);
+    const totalCards = result.memo.completedUids.length + result.memo.dueUids.length + result.memo.newUids.length + result.daily.completedUids.length + result.daily.dueUids.length + result.daily.newUids.length;
+    expect(totalCards).toBeLessThanOrEqual(5);
   });
 
   it('allocates full quota to single deck', () => {
@@ -247,6 +249,26 @@ describe('allocateDailyCards', () => {
 
     expect(sets.memo.dueUids).toEqual(originalDue);
     expect(sets.memo.newUids).toEqual(originalNew);
+  });
+
+  it('truncates completedUids to cap when exceeded', () => {
+    const result = allocateDailyCards({
+      tagCardSets: makeTagCardSets({
+        A: makeTag({
+          dueUids: ['due1', 'due2'],
+          newUids: ['new1'],
+          completedUids: ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'],
+        }),
+      }),
+      dailyLimit: 5,
+      tagsList: ['A'],
+      isCramming: false,
+      deckConfigs: JSON.stringify([{ name: 'A', weight: 100, swapQA: false }]),
+    });
+    expect(result.A.completedUids).toHaveLength(5);
+    expect(result.A.completedUids).toEqual(['c1', 'c2', 'c3', 'c4', 'c5']);
+    expect(result.A.dueUids).toHaveLength(0);
+    expect(result.A.newUids).toHaveLength(0);
   });
 
   describe('quota stability', () => {
