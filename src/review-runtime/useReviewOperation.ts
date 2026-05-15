@@ -46,7 +46,7 @@ export const useReviewOperation = (deps: ReviewOperationDeps) => {
   const reviewUnit = React.useCallback(
     async (args: {
       targetUid: RecordUid;
-      grade: number;
+      grade?: number;
       algorithm: SchedulingAlgorithm;
       interaction: InteractionStyle;
       forgotReinsertOffset: number;
@@ -106,7 +106,6 @@ export const useReviewOperation = (deps: ReviewOperationDeps) => {
           interaction,
           childUidsList: childUidsList!,
           childSessionData: childSessionData!,
-          currentChildIsLblNext: currentChildIsLblNext!,
           parentUid: parentUid!,
           parentSession: facts.latestByUid[parentUid!] as Session | undefined,
           now,

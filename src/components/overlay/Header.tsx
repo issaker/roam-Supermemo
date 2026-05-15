@@ -18,8 +18,7 @@ import { useReviewStore } from '~/review-runtime/store/context';
 import {
   selectAlgorithm,
   selectInteraction,
-  selectRemainingCount,
-  selectCurrentRemainingPosition,
+  selectCardQueueLength,
   selectTagCounts,
 } from '~/review-runtime/store/selectors';
 
@@ -266,17 +265,15 @@ const Header = ({
   const { state } = useReviewStore();
   const { selectedTag, tagsList, isCramming, settings } = state;
   const { showBreadcrumbs } = settings;
-  const { algorithm, interaction, remainingCount, currentPosition } = React.useMemo(
+  const { algorithm, interaction, queueLength } = React.useMemo(
     () => ({
       algorithm: selectAlgorithm(state),
       interaction: selectInteraction(state),
-      remainingCount: selectRemainingCount(state),
-      currentPosition: selectCurrentRemainingPosition(state),
+      queueLength: selectCardQueueLength(state),
     }),
     [state]
   );
-
-  const currentDisplayCount = currentPosition;
+  const currentPosition = state.viewState.currentIndex + 1;
 
   const toggleBreadcrumbs = () => {
     onToggleBreadcrumbs();
@@ -322,11 +319,11 @@ const Header = ({
         </span>
         <span className="text-sm mx-2 font-medium">
           <span data-testid="display-count-current">
-            {isDone ? remainingCount : currentDisplayCount}
+            {isDone ? queueLength : currentPosition}
           </span>
           <span className="opacity-50 mx-1">/</span>
           <span className="opacity-50" data-testid="display-count-total">
-            {remainingCount}
+            {queueLength}
           </span>
         </span>
         <button

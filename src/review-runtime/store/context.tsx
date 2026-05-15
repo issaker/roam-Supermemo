@@ -173,7 +173,6 @@ export const ReviewStoreProvider = ({
             interaction: input.interaction,
             childUidsList: input.childUidsList!,
             childSessionData: input.childSessionData!,
-            currentChildIsLblNext: input.currentChildIsLblNext ?? false,
             parentSession,
             now,
           });

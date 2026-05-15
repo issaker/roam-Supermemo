@@ -133,7 +133,7 @@ describe('selectEffectiveQueue', () => {
     expect(selectEffectiveQueue(state)).toEqual([]);
   });
 
-  it('filters out uids not in cardSet', () => {
+  it('keeps uids not in cardSet (e.g. scheduled/completed cards)', () => {
     const state = makeState({
       selectedTag: 'memo',
       queues: {
@@ -151,10 +151,10 @@ describe('selectEffectiveQueue', () => {
       },
     });
 
-    expect(selectEffectiveQueue(state)).toEqual(['a', 'b']);
+    expect(selectEffectiveQueue(state)).toEqual(['a', 'b', 'x']);
   });
 
-  it('filters out both removedUids and out-of-cardSet uids simultaneously', () => {
+  it('filters out removedUids but keeps uids absent from cardSet', () => {
     const state = makeState({
       selectedTag: 'memo',
       queues: {
@@ -172,7 +172,7 @@ describe('selectEffectiveQueue', () => {
       },
     });
 
-    expect(selectEffectiveQueue(state)).toEqual(['a', 'b']);
+    expect(selectEffectiveQueue(state)).toEqual(['a', 'b', 'd', 'e']);
   });
 });
 

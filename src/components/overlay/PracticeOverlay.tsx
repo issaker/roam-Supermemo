@@ -246,7 +246,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
   );
 
   const lblReviewUnit = React.useCallback(
-    (args) => {
+    (args: Parameters<typeof actions.gradeCard>[0] & { currentChildIsLblNext?: boolean; lineByLineCurrentChildIndex?: number }) => {
       return actions.gradeCard({
         targetUid: args.targetUid,
         grade: args.grade,
@@ -379,7 +379,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
   const onPracticeClick = React.useCallback(
     (gradeData: { sm2_grade?: number; refUid?: string }) => {
       if (isLineByLineActive && !lineByLineIsCardComplete) {
-        onLineByLineGrade(gradeData.sm2_grade ?? 0);
+        onLineByLineGrade(gradeData.sm2_grade);
         return;
       }
       if (isLineByLineActive && lineByLineIsCardComplete) {
@@ -390,7 +390,7 @@ const PracticeOverlay = ({ isOpen, onCloseCallback }: Props) => {
 
       void actions.gradeCard({
         targetUid: currentCardRefUid,
-        grade: gradeData.sm2_grade!,
+        grade: gradeData.sm2_grade,
         algorithm,
         interaction,
         isChild: false,

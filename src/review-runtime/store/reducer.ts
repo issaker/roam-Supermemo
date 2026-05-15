@@ -413,7 +413,10 @@ const handleGradeCard = (state: ReviewState, payload: GradeCardPayload): ReviewS
     const cardSet = computeCardSet(state.tagCardSets, state.selectedTag);
     const effectiveQueue = computeEffectiveQueue(queue.uids, queue.removedUids, cardSet);
 
-    if (!isChild || grade === 0) {
+    // grade=undefined → Next mode (PROGRESSIVE/FIXED), enters LBL Next path.
+    // grade=0 → Forgot (SM2), enters Forgot reinsert path.
+    // grade>0 → SM2 grading, advances normally.
+    if (!isChild || (grade !== undefined && grade === 0)) {
       const reinsertUid = isChild ? parentUid! : targetUid;
       if (grade === 0 && forgotReinsertOffset > 0) {
         const afterUid = effectiveQueue[state.viewState.currentIndex] || reinsertUid;

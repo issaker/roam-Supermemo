@@ -105,24 +105,24 @@ export const syncQueueWithCardSet = (prev: QueueState, cardSet: CardSet): QueueS
 
 // Only-add reconciliation: preserves existing queue order (review progress),
 // appends cardSet UIDs that are missing. Never removes — cards already in the
-// queue stay even if temporarily absent from cardSet (e.g. stale allocation).
-// removedUids entries are cleared for cards that reappear in cardSet.
+// queue stay even if temporarily absent from cardSet (e.g. completed cards,
+// scheduled LBL decks). Removed cards are tracked via removedUids, not by
+// omitting from cardSet.
 export const reconcileUids = (
   existingUids: RecordUid[],
   existingRemoved: RecordUid[],
   cardSet: CardSet
 ): { uids: RecordUid[]; removedUids: RecordUid[] } => {
-  const cardSetUids = getCardSetUidSet(cardSet);
   const existingSet = new Set(existingUids);
 
-  const kept = existingUids.filter((uid) => cardSetUids.has(uid));
   const toAdd = [...cardSet.completed, ...cardSet.due, ...cardSet.new].filter(
     (uid) => !existingSet.has(uid)
   );
+  const cardSetUids = getCardSetUidSet(cardSet);
   const reconciledRemoved = existingRemoved.filter((uid) => !cardSetUids.has(uid));
 
   return {
-    uids: [...kept, ...toAdd],
+    uids: [...existingUids, ...toAdd],
     removedUids: reconciledRemoved,
   };
 };
@@ -130,14 +130,17 @@ export const reconcileUids = (
 export const getCardSetUidSet = (cardSet: CardSet): Set<RecordUid> =>
   new Set([...cardSet.completed, ...cardSet.due, ...cardSet.new]);
 
+// Effective queue: snapshot uids minus removedUids. No cardSet filtering —
+// once a card enters the daily queue snapshot it stays until the user
+// explicitly removes it or the session ends. Completed/scheduled cards
+// remain visible for undo and review progress tracking.
 export const computeEffectiveQueue = (
   uids: RecordUid[],
   removedUids: RecordUid[],
-  cardSet: CardSet
+  _cardSet: CardSet
 ): RecordUid[] => {
   const removedSet = new Set(removedUids);
-  const validUids = getCardSetUidSet(cardSet);
-  return uids.filter((uid) => !removedSet.has(uid) && validUids.has(uid));
+  return uids.filter((uid) => !removedSet.has(uid));
 };
 
 export const hasCardsInSet = (cardSet: CardSet): boolean =>

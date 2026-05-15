@@ -63,30 +63,27 @@ export const calculateChildReview = ({
   interaction,
   childUidsList,
   childSessionData,
-  currentChildIsLblNext,
   parentUid: _parentUid,
   parentSession,
   now,
 }: {
   targetUid: RecordUid;
-  grade: number;
+  grade?: number;
   algorithm: SchedulingAlgorithm;
   interaction: import('~/models/session').InteractionStyle;
   childUidsList: string[];
   childSessionData: Record<string, Session>;
-  currentChildIsLblNext: boolean;
   parentUid: RecordUid;
   parentSession: Session | undefined;
   now: Date;
 }): ChildReviewResult => {
   const existingChildSession = childSessionData[targetUid] || generateNewSession({ algorithm });
   const baseForCalc = resolveBaseForCalculation(existingChildSession, now);
-  const sm2_grade = currentChildIsLblNext ? undefined : grade;
 
   const practiceResult = generatePracticeData({
     ...baseForCalc,
     algorithm,
-    ...omitUndefined({ sm2_grade }),
+    ...omitUndefined({ sm2_grade: grade }),
     dateCreated: now,
   });
 
@@ -124,7 +121,7 @@ export const calculateNormalReview = ({
   fixed_unit,
   now,
 }: {
-  grade: number;
+  grade?: number;
   algorithm: SchedulingAlgorithm;
   interaction: import('~/models/session').InteractionStyle;
   baseCardData?: Session;
@@ -136,7 +133,7 @@ export const calculateNormalReview = ({
   const baseData = baseCardData || currentCardData;
   const practiceResult = generatePracticeData({
     ...baseData,
-    sm2_grade: grade,
+    ...omitUndefined({ sm2_grade: grade }),
     algorithm,
     interaction,
     ...omitUndefined({ fixed_multiplier, fixed_unit }),

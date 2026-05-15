@@ -44,7 +44,7 @@ interface UseLineByLineReviewInput {
   reviewUnit: (args: {
     targetUid: string;
     parentUid: string;
-    grade: number;
+    grade?: number;
     algorithm: SchedulingAlgorithm;
     interaction: InteractionStyle;
     isChild: true;
@@ -69,7 +69,7 @@ interface UseLineByLineReviewOutput {
   currentChildUid: string | undefined;
   lineByLineIsCardComplete: boolean;
   dueChildCount: number;
-  onLineByLineGrade: (_grade: number) => void;
+  onLineByLineGrade: (_grade?: number) => void;
   onLineByLineShowAnswer: () => void;
   currentChildIsLblNext: boolean;
   onLineByLinePrev: () => void;
@@ -184,7 +184,7 @@ export default function useLineByLineReview({
   ]);
 
   const onLineByLineGrade = React.useCallback(
-    (grade: number) => {
+    (grade?: number) => {
       if (
         !currentCardRefUid ||
         !currentChildUid ||

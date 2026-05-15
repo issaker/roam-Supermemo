@@ -302,7 +302,6 @@ describe('calculateChildReview', () => {
           nextDueDate: new Date('2026-05-01T00:00:00.000Z'),
         }),
       },
-      currentChildIsLblNext: false,
       parentUid: 'parent',
       parentSession: makeSession({
         algorithm: SchedulingAlgorithm.SM2,
@@ -327,7 +326,6 @@ describe('calculateChildReview', () => {
       interaction: InteractionStyle.LBL,
       childUidsList: ['child_a'],
       childSessionData: {},
-      currentChildIsLblNext: false,
       parentUid: 'parent',
       parentSession: makeSession({
         algorithm: SchedulingAlgorithm.PROGRESSIVE,
@@ -342,10 +340,10 @@ describe('calculateChildReview', () => {
     expect(result.practiceResult.dateCreated).toEqual(now);
   });
 
-  it('omits sm2_grade when currentChildIsLblNext is true', () => {
+  it('omits sm2_grade when grade is undefined (Next mode)', () => {
     const result = calculateChildReview({
       targetUid: 'child_a',
-      grade: 3,
+      grade: undefined,
       algorithm: SchedulingAlgorithm.SM2,
       interaction: InteractionStyle.LBL,
       childUidsList: ['child_a'],
@@ -357,7 +355,6 @@ describe('calculateChildReview', () => {
           sm2_eFactor: 2.5,
         }),
       },
-      currentChildIsLblNext: true,
       parentUid: 'parent',
       parentSession: makeSession({
         algorithm: SchedulingAlgorithm.SM2,
@@ -369,7 +366,7 @@ describe('calculateChildReview', () => {
     expect(result.practiceResult.sm2_grade).toBeUndefined();
   });
 
-  it('includes sm2_grade when currentChildIsLblNext is false', () => {
+  it('includes sm2_grade when grade is provided (SM2 grading)', () => {
     const result = calculateChildReview({
       targetUid: 'child_a',
       grade: 4,
@@ -384,7 +381,6 @@ describe('calculateChildReview', () => {
           sm2_eFactor: 2.5,
         }),
       },
-      currentChildIsLblNext: false,
       parentUid: 'parent',
       parentSession: makeSession({
         algorithm: SchedulingAlgorithm.SM2,
@@ -415,7 +411,6 @@ describe('calculateChildReview', () => {
           nextDueDate: new Date('2026-05-01T00:00:00.000Z'),
         }),
       },
-      currentChildIsLblNext: false,
       parentUid: 'parent',
       parentSession: makeSession({
         algorithm: SchedulingAlgorithm.SM2,
@@ -450,7 +445,6 @@ describe('calculateChildReview', () => {
           nextDueDate: new Date('2026-05-03T00:00:00.000Z'),
         }),
       },
-      currentChildIsLblNext: false,
       parentUid: 'parent',
       parentSession: makeSession({
         algorithm: SchedulingAlgorithm.SM2,
@@ -483,7 +477,6 @@ describe('calculateChildReview', () => {
           algorithm: SchedulingAlgorithm.SM2,
         }),
       },
-      currentChildIsLblNext: false,
       parentUid: 'parent',
       parentSession: makeSession({
         algorithm: SchedulingAlgorithm.SM2,
@@ -510,7 +503,6 @@ describe('calculateChildReview', () => {
           sm2_eFactor: 2.5,
         }),
       },
-      currentChildIsLblNext: false,
       parentUid: 'parent',
       parentSession: undefined,
       now,

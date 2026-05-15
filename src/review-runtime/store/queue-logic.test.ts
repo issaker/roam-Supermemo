@@ -129,7 +129,7 @@ describe('reconcileUids', () => {
   it('keeps existing uids even if absent from cardSet', () => {
     const cardSet = makeCardSet({ due: ['a'], new: [], completed: [] });
     const result = reconcileUids(['a', 'b'], [], cardSet);
-    expect(result.uids).toEqual(['a']);
+    expect(result.uids).toEqual(['a', 'b']);
   });
 
   it('appends in completed→due→new order for missing uids', () => {
@@ -138,18 +138,18 @@ describe('reconcileUids', () => {
     expect(result.uids).toEqual(['c1', 'd1', 'n1']);
   });
 
-  it('handles empty cardSet', () => {
+  it('handles empty cardSet with existing uids', () => {
     const result = reconcileUids(['a', 'b'], ['x'], emptyCardSet);
-    expect(result.uids).toEqual([]);
+    expect(result.uids).toEqual(['a', 'b']);
     expect(result.removedUids).toEqual(['x']);
   });
 });
 
 describe('computeEffectiveQueue', () => {
-  it('filters out removedUids and uids not in cardSet', () => {
+  it('filters out removedUids only', () => {
     const cardSet = makeCardSet({ due: ['a', 'b', 'c'], new: [], completed: [] });
     const result = computeEffectiveQueue(['a', 'b', 'c', 'd'], ['b'], cardSet);
-    expect(result).toEqual(['a', 'c']);
+    expect(result).toEqual(['a', 'c', 'd']);
   });
 
   it('returns empty when all uids are removed', () => {
@@ -164,9 +164,9 @@ describe('computeEffectiveQueue', () => {
     expect(result).toEqual(['a', 'b', 'c']);
   });
 
-  it('returns empty when cardSet is empty', () => {
+  it('keeps uids not in cardSet (e.g. scheduled/completed cards)', () => {
     const result = computeEffectiveQueue(['a', 'b'], [], emptyCardSet);
-    expect(result).toEqual([]);
+    expect(result).toEqual(['a', 'b']);
   });
 
   it('preserves queue order', () => {

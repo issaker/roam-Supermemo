@@ -51,7 +51,7 @@ export type ReviewState = {
 
 export type GradeCardInput = {
   targetUid: RecordUid;
-  grade: number;
+  grade?: number;
   algorithm: SchedulingAlgorithm;
   interaction: InteractionStyle;
   isChild: boolean;
@@ -71,7 +71,7 @@ export type GradeCardInput = {
 export type GradeCardPayload = {
   sessions: Partial<Records>;
   targetUid: RecordUid;
-  grade: number;
+  grade?: number;
   isChild: boolean;
   parentUid?: RecordUid;
   forgotReinsertOffset: number;

@@ -1041,6 +1041,109 @@ describe('GRADE_CARD', () => {
       expect(result.queues[queueId].uids).toEqual(['parent']);
     });
 
+    it('LBL Next with undefined grade enters LBL Next path, not Forgot path', () => {
+      const childUids = ['c1', 'c2'];
+      const cardSet = makeCardSet(['parent'], [], [], { parent: childUids });
+      const dueChild: Session = makeSession({
+        nextDueDate: new Date('2020-01-01'),
+        dateCreated: new Date(),
+      });
+      const practiceResult: Session = makeSession({
+        nextDueDate: new Date('2027-01-01'),
+        dateCreated: new Date(),
+      });
+      const state = makeState({
+        selectedTag: tag,
+        tagCardSets: makeTagCardSets(tag, cardSet),
+        queues: { [queueId]: makeQueueState(['parent']) },
+        facts: {
+          latestByUid: {
+            parent: makeSession({ interaction: InteractionStyle.LBL }),
+            c1: dueChild,
+            c2: dueChild,
+          },
+          pendingByUid: {},
+        },
+        viewState: { currentIndex: 0, focusedChildUid: 'c1', maxVisitedChildIndex: 0 },
+      });
+      const result = reviewReducer(state, {
+        type: 'GRADE_CARD',
+        payload: {
+          sessions: { c1: practiceResult },
+          targetUid: 'c1',
+          grade: undefined,
+          isChild: true,
+          parentUid: 'parent',
+          forgotReinsertOffset: 3,
+          lblNextReinsertOffset: 0,
+          currentChildIsLblNext: true,
+          lineByLineCurrentChildIndex: 0,
+          childUidsList: childUids,
+          updatedChildSessionsForParent: {
+            c1: { ...dueChild, ...practiceResult },
+            c2: dueChild,
+          },
+        },
+      });
+      expect(result.queues[queueId].uids).toEqual(['parent']);
+      expect(result.viewState.focusedChildUid).toBe('c2');
+      expect(result.viewState.currentIndex).toBe(0);
+    });
+
+    it('LBL Next with undefined grade and lblNextReinsertOffset>0 reinserts parent', () => {
+      const childUids = ['c1', 'c2', 'c3'];
+      const otherCard: Session = makeSession({
+        nextDueDate: new Date('2020-01-01'),
+        dateCreated: new Date(),
+      });
+      const cardSet = makeCardSet(['parent', 'other'], [], [], { parent: childUids });
+      const dueChild: Session = makeSession({
+        nextDueDate: new Date('2020-01-01'),
+        dateCreated: new Date(),
+      });
+      const practiceResult: Session = makeSession({
+        nextDueDate: new Date('2027-01-01'),
+        dateCreated: new Date(),
+      });
+      const state = makeState({
+        selectedTag: tag,
+        tagCardSets: makeTagCardSets(tag, cardSet),
+        queues: { [queueId]: makeQueueState(['parent', 'other']) },
+        facts: {
+          latestByUid: {
+            parent: makeSession({ interaction: InteractionStyle.LBL }),
+            other: otherCard,
+            c1: dueChild,
+            c2: dueChild,
+            c3: dueChild,
+          },
+          pendingByUid: {},
+        },
+        viewState: { currentIndex: 0, focusedChildUid: 'c1', maxVisitedChildIndex: 0 },
+      });
+      const result = reviewReducer(state, {
+        type: 'GRADE_CARD',
+        payload: {
+          sessions: { c1: practiceResult },
+          targetUid: 'c1',
+          grade: undefined,
+          isChild: true,
+          parentUid: 'parent',
+          forgotReinsertOffset: 3,
+          lblNextReinsertOffset: 2,
+          currentChildIsLblNext: true,
+          lineByLineCurrentChildIndex: 0,
+          childUidsList: childUids,
+          updatedChildSessionsForParent: {
+            c1: { ...dueChild, ...practiceResult },
+            c2: dueChild,
+            c3: dueChild,
+          },
+        },
+      });
+      expect(result.queues[queueId].uids).toEqual(['other', 'parent']);
+    });
+
     it('does not reinsert when child is last in list', () => {
       const childUids = ['c1', 'c2'];
       const cardSet = makeCardSet(['parent'], [], [], { parent: childUids });
