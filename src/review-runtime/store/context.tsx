@@ -101,6 +101,8 @@ export const ReviewStoreProvider = ({
 
   // Restore persisted queue on page refresh, reconciled with current cardSet.
   // cardSet intentionally omitted — changes are tracked via queueId + hasCards + cardSetFingerprint
+  // dailyLimit dependency: settings load asynchronously (default dailyLimit=0),
+  // re-initialize when dailyLimit arrives so the queue reflects filtered cardSet.
   React.useEffect(() => {
     if (!hasCards) return;
     const persisted = loadPersistedQueue(queueId);
@@ -109,7 +111,7 @@ export const ReviewStoreProvider = ({
       : reconcileUids([], [], cardSet);
     dispatch({ type: 'QUEUE_INIT', queueId, uids, removedUids });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queueId, hasCards]);
+  }, [queueId, hasCards, state.settings.dailyLimit]);
 
   const cardSetFingerprint = React.useMemo(() => {
     if (!hasCards) return '';

@@ -132,10 +132,37 @@ describe('reconcileUids', () => {
     expect(result.uids).toEqual(['a', 'b']);
   });
 
-  it('appends in completed→due→new order for missing uids', () => {
+  it('excludes completed when creating new queue from scratch', () => {
     const cardSet = makeCardSet({ due: ['d1'], new: ['n1'], completed: ['c1'] });
     const result = reconcileUids([], [], cardSet);
-    expect(result.uids).toEqual(['c1', 'd1', 'n1']);
+    expect(result.uids).toEqual(['d1', 'n1']);
+  });
+
+  it('never adds completed cards even when not in existing queue', () => {
+    const cardSet = makeCardSet({ due: ['d1'], new: ['n1'], completed: ['c1'] });
+    const result = reconcileUids(['d1'], [], cardSet);
+    expect(result.uids).toEqual(['d1', 'n1']);
+    expect(result.uids).not.toContain('c1');
+  });
+
+  it('cross-day: stale completed cards do not enter new day queue', () => {
+    const staleCardSet = makeCardSet({
+      due: ['due1', 'due2'],
+      new: ['new1'],
+      completed: ['old1', 'old2', 'old3'],
+    });
+    const result = reconcileUids([], [], staleCardSet);
+    expect(result.uids).toEqual(['due1', 'due2', 'new1']);
+    expect(result.uids).not.toContain('old1');
+    expect(result.uids).not.toContain('old2');
+    expect(result.uids).not.toContain('old3');
+  });
+
+  it('same-day reopen: persisted queue preserves completed cards in existingUids', () => {
+    const cardSet = makeCardSet({ due: ['due1'], new: [], completed: ['c1', 'c2'] });
+    const persisted = makeQueue(['c1', 'c2', 'due1'], []);
+    const result = reconcileUids(persisted.uids, persisted.removedUids, cardSet);
+    expect(result.uids).toEqual(['c1', 'c2', 'due1']);
   });
 
   it('handles empty cardSet with existing uids', () => {

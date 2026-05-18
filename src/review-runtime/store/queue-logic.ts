@@ -108,16 +108,19 @@ export const syncQueueWithCardSet = (prev: QueueState, cardSet: CardSet): QueueS
 // queue stay even if temporarily absent from cardSet (e.g. completed cards,
 // scheduled LBL decks). Removed cards are tracked via removedUids, not by
 // omitting from cardSet.
+//
+// completed 不加入 toAdd：已完成卡片通过评分从 due/new 移入 completed，
+// 已在队列中无需重复添加；跨天场景下 cardSet.completed 可能包含过时数据，
+// 排除可防止昨天的已完成卡片进入新一天的队列。同日重新打开时通过持久化
+// 队列恢复已完成卡片（它们在 existingUids 中，不会被移除）。
 export const reconcileUids = (
   existingUids: RecordUid[],
   existingRemoved: RecordUid[],
   cardSet: CardSet
 ): { uids: RecordUid[]; removedUids: RecordUid[] } => {
   const existingSet = new Set(existingUids);
+  const toAdd = [...cardSet.due, ...cardSet.new].filter((uid) => !existingSet.has(uid));
 
-  const toAdd = [...cardSet.completed, ...cardSet.due, ...cardSet.new].filter(
-    (uid) => !existingSet.has(uid)
-  );
   const cardSetUids = getCardSetUidSet(cardSet);
   const reconciledRemoved = existingRemoved.filter((uid) => !cardSetUids.has(uid));
 
