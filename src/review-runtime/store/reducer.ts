@@ -12,6 +12,7 @@ import {
   hasCardsInSet,
   applyReinsert,
   computeTodayEnd,
+  truncateQueueToCardSet,
 } from './queue-logic';
 import { selectEffectiveQueue } from './selectors';
 import { defaultSettings } from '~/hooks/useSettings';
@@ -256,35 +257,48 @@ export const reviewReducer = (state: ReviewState, action: ReviewAction): ReviewS
         ...withSettings,
         tagCardSets: computeFilteredTagCardSets(withSettings),
       };
-      if (selectedTagValid !== state.selectedTag) {
-        const newQueues = reconcileQueueForTag(
-          withFiltered.queues,
-          selectedTagValid,
-          withFiltered.tagCardSets
-        );
-        const queueId = computeQueueId(selectedTagValid);
-        const queue = newQueues[queueId];
+
+      if (!selectedTagValid) return withFiltered;
+
+      // 设置变更后，始终对当前选中牌组做队列对账 + 遮罩层截断：
+      // reconcileQueueForTag 追加新出现的 UID（配额增大时），
+      // truncateQueueToCardSet 移除不在新 cardSet 中的 UID（配额缩小时）。
+      let newQueues = reconcileQueueForTag(
+        withFiltered.queues,
+        selectedTagValid,
+        withFiltered.tagCardSets
+      );
+      const queueId = computeQueueId(selectedTagValid);
+      const queue = newQueues[queueId];
+      if (queue) {
         const cardSet = computeCardSet(withFiltered.tagCardSets, selectedTagValid);
-        const effectiveQueue = queue
-          ? computeEffectiveQueue(queue.uids, queue.removedUids, cardSet)
-          : [];
-        const nextIndex = findNextUnpracticedIndex(
-          effectiveQueue,
-          withFiltered.facts.latestByUid,
-          cardSet.lblMeta,
-          0
-        );
-        return {
-          ...withFiltered,
-          queues: newQueues,
-          viewState: {
-            currentIndex: nextIndex,
-            focusedChildUid: undefined,
-            maxVisitedChildIndex: 0,
-          },
-        };
+        const truncated = truncateQueueToCardSet(queue, cardSet);
+        if (truncated !== queue) {
+          newQueues = { ...newQueues, [queueId]: truncated };
+        }
       }
-      return withFiltered;
+
+      const cardSet = computeCardSet(withFiltered.tagCardSets, selectedTagValid);
+      const finalQueue = newQueues[queueId];
+      const effectiveQueue = finalQueue
+        ? computeEffectiveQueue(finalQueue.uids, finalQueue.removedUids, cardSet)
+        : [];
+      const nextIndex = findNextUnpracticedIndex(
+        effectiveQueue,
+        withFiltered.facts.latestByUid,
+        cardSet.lblMeta,
+        0
+      );
+
+      return {
+        ...withFiltered,
+        queues: newQueues,
+        viewState: {
+          currentIndex: nextIndex,
+          focusedChildUid: undefined,
+          maxVisitedChildIndex: 0,
+        },
+      };
     }
 
     case 'SET_DATA_PAGE_TITLE': {

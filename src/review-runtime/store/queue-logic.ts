@@ -133,6 +133,21 @@ export const reconcileUids = (
 export const getCardSetUidSet = (cardSet: CardSet): Set<RecordUid> =>
   new Set([...cardSet.completed, ...cardSet.due, ...cardSet.new]);
 
+// 遮罩层截断：将队列中不在 cardSet 范围内的 UID 移除。
+// 当用户调低 dailyLimit 或 weight 导致配额缩小时，
+// allocateDailyCards 会从 tagCardSets 中移除超配额的 UID，
+// 但 reconcileUids（only-add 设计）不会移除已在队列中的旧 UID。
+// 此函数弥补这一缺口，确保遮罩层既能增也能减。
+export const truncateQueueToCardSet = (
+  prev: QueueState,
+  cardSet: CardSet
+): QueueState => {
+  const cardSetUids = getCardSetUidSet(cardSet);
+  const truncatedUids = prev.uids.filter((uid) => cardSetUids.has(uid));
+  if (truncatedUids.length === prev.uids.length) return prev;
+  return { ...prev, uids: truncatedUids };
+};
+
 // Effective queue: snapshot uids minus removedUids. No cardSet filtering —
 // once a card enters the daily queue snapshot it stays until the user
 // explicitly removes it or the session ends. Completed/scheduled cards

@@ -539,6 +539,76 @@ describe('UPDATE_SETTINGS', () => {
     expect(result.selectedTag).toBe('memo');
     expect(result.tagsList).toEqual(['memo', 'newTag']);
   });
+
+  it('truncates queue when dailyLimit is reduced (mask can decrease)', () => {
+    const tag = 'memo';
+    const queueId = computeQueueId(tag);
+    const cardSet = makeCardSet(['a', 'b', 'c', 'd', 'e']);
+    const tagCardSets = makeTagCardSets(tag, cardSet);
+    const state = makeState({
+      selectedTag: tag,
+      rawTagCardSets: tagCardSets,
+      tagCardSets,
+      queues: { [queueId]: makeQueueState(['a', 'b', 'c', 'd', 'e']) },
+      settings: { ...defaultSettings, dailyLimit: 0 },
+      tagsList: [tag],
+    });
+    const result = reviewReducer(state, {
+      type: 'UPDATE_SETTINGS',
+      settings: { dailyLimit: 2 },
+    });
+    const effectiveUids = result.queues[queueId].uids;
+    expect(effectiveUids.length).toBeLessThanOrEqual(2);
+  });
+
+  it('adds cards to queue when dailyLimit is increased (mask can increase)', () => {
+    const tag = 'memo';
+    const queueId = computeQueueId(tag);
+    const cardSet = makeCardSet(['a', 'b', 'c', 'd', 'e']);
+    const tagCardSets = makeTagCardSets(tag, cardSet);
+    const limitedTagCardSets = {
+      [tag]: {
+        ...tagCardSets[tag],
+        dueUids: ['a'],
+        newUids: [],
+      },
+    };
+    const state = makeState({
+      selectedTag: tag,
+      rawTagCardSets: tagCardSets,
+      tagCardSets: limitedTagCardSets,
+      queues: { [queueId]: makeQueueState(['a']) },
+      settings: { ...defaultSettings, dailyLimit: 1 },
+      tagsList: [tag],
+    });
+    const result = reviewReducer(state, {
+      type: 'UPDATE_SETTINGS',
+      settings: { dailyLimit: 5 },
+    });
+    expect(result.queues[queueId].uids.length).toBeGreaterThan(1);
+  });
+
+  it('resets viewState after settings change', () => {
+    const tag = 'memo';
+    const queueId = computeQueueId(tag);
+    const cardSet = makeCardSet(['a', 'b']);
+    const tagCardSets = makeTagCardSets(tag, cardSet);
+    const state = makeState({
+      selectedTag: tag,
+      rawTagCardSets: tagCardSets,
+      tagCardSets,
+      queues: { [queueId]: makeQueueState(['a', 'b']) },
+      settings: { ...defaultSettings, dailyLimit: 0 },
+      tagsList: [tag],
+      viewState: { currentIndex: 1, focusedChildUid: 'x', maxVisitedChildIndex: 3 },
+    });
+    const result = reviewReducer(state, {
+      type: 'UPDATE_SETTINGS',
+      settings: { dailyLimit: 5 },
+    });
+    expect(result.viewState.focusedChildUid).toBeUndefined();
+    expect(result.viewState.maxVisitedChildIndex).toBe(0);
+  });
 });
 
 describe('SET_DATA_PAGE_TITLE', () => {

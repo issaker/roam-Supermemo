@@ -8,6 +8,7 @@ import {
   computeCardSet,
   computeTodayEnd,
   getCardSetUidSet,
+  truncateQueueToCardSet,
   loadPersistedQueue,
   savePersistedQueue,
   cleanStaleQueueKeys,
@@ -311,6 +312,50 @@ describe('getCardSetUidSet', () => {
   it('returns empty Set for empty cardSet', () => {
     const result = getCardSetUidSet(emptyCardSet);
     expect(result.size).toBe(0);
+  });
+});
+
+describe('truncateQueueToCardSet', () => {
+  it('removes uids not in cardSet when cap shrinks', () => {
+    const queue = makeQueue(['a', 'b', 'c', 'd', 'e']);
+    const cardSet = makeCardSet({ due: ['a', 'b'], new: [], completed: ['c'] });
+    const result = truncateQueueToCardSet(queue, cardSet);
+    expect(result.uids).toEqual(['a', 'b', 'c']);
+  });
+
+  it('returns same reference when no uids are removed', () => {
+    const queue = makeQueue(['a', 'b']);
+    const cardSet = makeCardSet({ due: ['a', 'b'], new: [], completed: [] });
+    const result = truncateQueueToCardSet(queue, cardSet);
+    expect(result).toBe(queue);
+  });
+
+  it('preserves queue order after truncation', () => {
+    const queue = makeQueue(['c', 'a', 'b', 'd']);
+    const cardSet = makeCardSet({ due: ['a'], new: ['b'], completed: ['c'] });
+    const result = truncateQueueToCardSet(queue, cardSet);
+    expect(result.uids).toEqual(['c', 'a', 'b']);
+  });
+
+  it('removes all uids when cardSet is empty', () => {
+    const queue = makeQueue(['a', 'b']);
+    const result = truncateQueueToCardSet(queue, emptyCardSet);
+    expect(result.uids).toEqual([]);
+  });
+
+  it('preserves removedUids', () => {
+    const queue = makeQueue(['a', 'b', 'c'], ['b']);
+    const cardSet = makeCardSet({ due: ['a', 'c'], new: [], completed: [] });
+    const result = truncateQueueToCardSet(queue, cardSet);
+    expect(result.uids).toEqual(['a', 'c']);
+    expect(result.removedUids).toEqual(['b']);
+  });
+
+  it('handles completed cards staying in queue', () => {
+    const queue = makeQueue(['c1', 'c2', 'd1', 'd2']);
+    const cardSet = makeCardSet({ due: ['d1'], new: [], completed: ['c1', 'c2'] });
+    const result = truncateQueueToCardSet(queue, cardSet);
+    expect(result.uids).toEqual(['c1', 'c2', 'd1']);
   });
 });
 

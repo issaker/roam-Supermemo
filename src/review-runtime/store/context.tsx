@@ -25,6 +25,7 @@ import {
   cleanStaleQueueKeys,
   findDeletedUids,
   syncQueueWithCardSet,
+  truncateQueueToCardSet,
 } from './queue-logic';
 
 export type ReviewStoreActions = {
@@ -106,10 +107,14 @@ export const ReviewStoreProvider = ({
   React.useEffect(() => {
     if (!hasCards) return;
     const persisted = loadPersistedQueue(queueId);
-    const { uids, removedUids } = persisted
+    const reconciled = persisted
       ? reconcileUids(persisted.uids, persisted.removedUids, cardSet)
       : reconcileUids([], [], cardSet);
-    dispatch({ type: 'QUEUE_INIT', queueId, uids, removedUids });
+    const truncated = truncateQueueToCardSet(
+      { uids: reconciled.uids, removedUids: reconciled.removedUids },
+      cardSet
+    );
+    dispatch({ type: 'QUEUE_INIT', queueId, uids: truncated.uids, removedUids: truncated.removedUids });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueId, hasCards, state.settings.dailyLimit]);
 
